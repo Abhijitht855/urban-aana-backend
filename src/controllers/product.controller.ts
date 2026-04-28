@@ -130,18 +130,18 @@ import Product from '../models/Product';
 // @access  Private/Admin
 export const createProduct = async (req: Request, res: Response) => {
   try {
-    const { name, shortDescription, mainDescription, category, isFeatured } = req.body;
+    // 1. weight കൂടി ബോഡിയിൽ നിന്ന് എടുക്കുന്നു
+    const { name, shortDescription, mainDescription, category, isFeatured, weight } = req.body;
 
-    // 1. Files handle cheyyunnu (Main Product Image)
+    // 2. Files handle cheyyunnu (Main Product Image)
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     const mainImageUrl = files['mainImage'] ? files['mainImage'][0].path : '';
 
-    // 2. Variants logic handle cheyyunnu
+    // 3. Variants logic handle cheyyunnu
     let variants = [];
     if (req.body.variants) {
       variants = JSON.parse(req.body.variants);
 
-      // 🔥 Duplicate Check: Same Size & Color combination check
       const seen = new Set();
       for (const v of variants) {
         const identifier = `${v.size}-${v.color.toLowerCase().trim()}`;
@@ -155,6 +155,7 @@ export const createProduct = async (req: Request, res: Response) => {
       }
     }
 
+    // 4. പുതിയ Product ഒബ്ജക്റ്റിൽ weight ചേർക്കുന്നു
     const product = new Product({
       name,
       shortDescription,
@@ -162,6 +163,7 @@ export const createProduct = async (req: Request, res: Response) => {
       category,
       mainImage: mainImageUrl,
       variants,
+      weight: weight ? Number(weight) : 0.5, // 🔥 weight നൽകിയില്ലെങ്കിൽ default 0.5kg
       isFeatured: isFeatured === 'true' ? true : false,
     });
 
@@ -169,7 +171,6 @@ export const createProduct = async (req: Request, res: Response) => {
     res.status(201).json(savedProduct);
 
   } catch (error: any) {
-    // Mongoose Schema validation errors handle cheyyാൻ
     if (error.name === 'ValidationError') {
       res.status(400).json({ message: error.message });
       return;
@@ -212,7 +213,8 @@ export const getProductById = async (req: Request, res: Response) => {
 // @access  Private/Admin
 export const updateProduct = async (req: Request, res: Response) => {
   try {
-    const { name, shortDescription, mainDescription, category, isFeatured, variants } = req.body;
+    // 1. weight കൂടി ബോഡിയിൽ നിന്ന് എടുക്കുന്നു
+    const { name, shortDescription, mainDescription, category, isFeatured, variants, weight } = req.body;
     const product = await Product.findById(req.params.id);
 
     if (!product) {
@@ -241,22 +243,22 @@ export const updateProduct = async (req: Request, res: Response) => {
         seen.add(identifier);
       }
 
-      // ✅ Step 1: _id ഇല്ലാത്ത variants വന്നാൽ error — accidental _id loss തടയുന്നു
+      // Step 1: _id check
       const hasVariantWithoutId = parsedVariants.some((v: any) => !v._id);
       if (hasVariantWithoutId) {
         res.status(400).json({
-          message: 'All variants must include _id when updating. Missing _id on one or more variants.'
+          message: 'All variants must include _id when updating.'
         });
         return;
       }
 
-      // ✅ Step 2: Incoming-ൽ ഇല്ലാത്ത variants delete ചെയ്യുന്നു
+      // Step 2: Delete missing variants
       const incomingIds = parsedVariants.map((v: any) => v._id.toString());
       product.variants = product.variants.filter(
         (ev: any) => incomingIds.includes(ev._id.toString())
       ) as any;
 
-      // ✅ Step 3: Array replace ചെയ്യാതെ in-place update — _id മാറില്ല
+      // Step 3: In-place update
       for (const v of parsedVariants) {
         const existing = product.variants.find(
           (ev: any) => ev._id.toString() === v._id.toString()
@@ -264,19 +266,26 @@ export const updateProduct = async (req: Request, res: Response) => {
 
         if (!existing) {
           res.status(400).json({
-            message: `Invalid Variant ID: ${v._id}. This ID does not belong to this product.`
+            message: `Invalid Variant ID: ${v._id}`
           });
           return;
         }
 
-        (existing as any).set(v); // ✅ _id preserve ആകുന്നു
+        (existing as any).set(v);
       }
     }
 
+    // 2. ഇതര ഫീൽഡുകൾക്കൊപ്പം weight അപ്‌ഡേറ്റ് ചെയ്യുന്നു
     product.name = name || product.name;
     product.shortDescription = shortDescription || product.shortDescription;
     product.mainDescription = mainDescription || product.mainDescription;
     product.category = category || product.category;
+
+    // 🔥 weight നൽകിയിട്ടുണ്ടെങ്കിൽ മാത്രം അപ്‌ഡേറ്റ് ചെയ്യുക
+    if (weight !== undefined) {
+      product.weight = Number(weight);
+    }
+
     product.isFeatured = isFeatured === 'true' ? true : (isFeatured === 'false' ? false : product.isFeatured);
 
     const updatedProduct = await product.save();

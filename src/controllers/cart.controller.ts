@@ -124,9 +124,17 @@ export const addToCart = async (req: Request, res: Response) => {
             return;
         }
 
-        // 3. സ്റ്റോക്ക് പരിശോധന
+        // 3. സ്റ്റോക്ക് പരിശോധന (പരിഷ്കരിച്ചത്)
         if (variant.stock <= 0) {
             res.status(400).json({ message: 'Selected variant is out of stock' });
+            return;
+        }
+
+        // കസ്റ്റമർ ആവശ്യപ്പെട്ട ക്വാണ്ടിറ്റി സ്റ്റോക്കിനേക്കാൾ കൂടുതലാണോ എന്ന് നോക്കുന്നു
+        if (Number(quantity) > variant.stock) {
+            res.status(400).json({
+                message: `Only ${variant.stock} items left in stock. You cannot add ${quantity} items.`
+            });
             return;
         }
 
@@ -200,23 +208,35 @@ export const getCart = async (req: Request, res: Response) => {
 export const updateCartQuantity = async (req: Request, res: Response) => {
     try {
         const { quantity } = req.body;
+        const requestedQuantity = Number(quantity);
 
-        if (Number(quantity) < 1) {
+        if (requestedQuantity < 1) {
             res.status(400).json({ message: 'Quantity must be at least 1' });
             return;
         }
 
-        const cartItem = await Cart.findOneAndUpdate(
-            { _id: req.params.id, user: req.user!._id },
-            { quantity: Number(quantity) },
-            { new: true }
-        );
-
-        if (cartItem) {
-            res.json(cartItem);
-        } else {
+        // കാർട്ട് ഐറ്റം കണ്ടെത്തുന്നു
+        const cartItem = await Cart.findOne({ _id: req.params.id, user: req.user!._id });
+        if (!cartItem) {
             res.status(404).json({ message: 'Cart item not found' });
+            return;
         }
+
+        // പ്രോഡക്റ്റും വേരിയന്റും ചെക്ക് ചെയ്ത് സ്റ്റോക്ക് ഉറപ്പുവരുത്തുന്നു
+        const product = await Product.findById(cartItem.product);
+        const variant = (product?.variants as any)?.id(cartItem.variantId);
+
+        if (!variant || requestedQuantity > variant.stock) {
+            res.status(400).json({
+                message: `Insufficient stock. Only ${variant?.stock || 0} left.`
+            });
+            return;
+        }
+
+        cartItem.quantity = requestedQuantity;
+        await cartItem.save();
+
+        res.json(cartItem);
     } catch (error: any) {
         res.status(500).json({ message: error.message });
     }

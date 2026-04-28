@@ -78,6 +78,7 @@ export interface IProduct extends Document {
     category: mongoose.Types.ObjectId;
     mainImage: string;
     variants: IVariant[];
+    weight: number;
     isFeatured: boolean;
     createdAt: Date;
     updatedAt: Date;
@@ -91,6 +92,11 @@ const productSchema = new Schema<IProduct>(
         mainDescription: { type: String, required: true },
         category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
         mainImage: { type: String, required: true },
+        weight: {
+            type: Number,
+            required: [true, 'Product weight is required for shipping'],
+            default: 0.5 // Default 500 grams
+        },
         variants: {
             type: [
                 {

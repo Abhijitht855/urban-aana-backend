@@ -59,6 +59,7 @@ import categoryRoutes from './routes/category.routes';
 import productRoutes from './routes/product.routes';
 import cartRoutes from './routes/cart.routes'
 import orderRoutes from './routes/order.routes'
+import shippingRoutes from './routes/shipping.routes';
 
 const app: Application = express();
 
@@ -89,7 +90,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
-
+app.use('/api/shipping', shippingRoutes);
 
 app.get('/', (req: Request, res: Response) => {
   res.json({ message: '🚀 Ecommerce API is running!' });
