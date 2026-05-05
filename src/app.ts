@@ -131,16 +131,28 @@ const app: Application = express();
 
 // Security middlewares
 app.use(helmet());
+
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://urbanaana.com'
+];
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? process.env.CLIENT_URL
-    : 'http://localhost:3000',
+  origin: function (origin, callback) {
+    console.log("Incoming Origin:", origin);
+
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
 }));
 
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-}
 
 // Rate limiters
 app.use('/api', apiLimiter);
@@ -167,26 +179,5 @@ app.use((req: Request, res: Response) => {
   res.status(404).json({ message: 'Route not found' });
 });
 
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  'https://urbanaana.com'
-];
-
-app.use(cors({
-  origin: function (origin, callback) {
-    console.log("Incoming Origin:", origin);
-
-    // allow Postman / server-to-server
-    if (!origin) return callback(null, true);
-
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-}));
 
 export default app;
