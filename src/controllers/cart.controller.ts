@@ -328,18 +328,26 @@ export const getCart = async (req: Request, res: Response) => {
         const cartItems = await Cart.find({ user: req.user!._id })
             .populate('product', 'name mainImage slug variants');
 
+        let totalPrice = 0;
+        let totalQuantity = 0;
+
         const formattedCart = cartItems.map((item: any) => {
             const productObj = item.product.toObject();
 
-            // ആഡ് ചെയ്ത കളർ വേരിയന്റ് കണ്ടെത്തുന്നു
             const variant = productObj.variants.find(
                 (v: any) => v._id.toString() === item.variantId.toString()
             );
 
-            // ആ കളറിലെ സ്പെസിഫിക് സൈസ് കണ്ടെത്തുന്നു
             const sizeDetail = variant?.sizes.find(
                 (s: any) => s._id.toString() === item.sizeId.toString()
             );
+
+            const price = sizeDetail?.price || 0;
+            const subtotal = price * item.quantity;
+
+            // 🔥 accumulate totals
+            totalPrice += subtotal;
+            totalQuantity += item.quantity;
 
             return {
                 _id: item._id,
@@ -353,12 +361,19 @@ export const getCart = async (req: Request, res: Response) => {
                 color: variant?.color,
                 image: variant?.images[0] || productObj.mainImage,
                 size: sizeDetail?.size,
-                price: sizeDetail?.price,
-                stock: sizeDetail?.stock
+                price,
+                stock: sizeDetail?.stock,
+                subtotal // ✅ add per item total
             };
         });
 
-        res.json(formattedCart);
+        res.json({
+            items: formattedCart,
+            totalQuantity,
+            totalPrice,
+            totalItems: formattedCart.length
+        });
+
     } catch (error: any) {
         res.status(500).json({ message: error.message });
     }
