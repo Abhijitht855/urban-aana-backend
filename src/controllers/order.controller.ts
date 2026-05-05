@@ -391,9 +391,9 @@ export const verifyPayment = async (req: Request, res: Response) => {
             .update(body.toString())
             .digest('hex');
 
-        // if (expectedSignature !== razorpay_signature) {
-        //     return res.status(400).json({ success: false, message: 'Invalid payment signature' });
-        // }
+        if (expectedSignature !== razorpay_signature) {
+            return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+        }
 
         // 3. സ്റ്റോക്ക് കുറയ്ക്കുന്നു
         for (const item of order.orderItems) {
