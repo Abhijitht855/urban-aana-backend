@@ -96,65 +96,223 @@
 //     }
 // };
 
+// import { Request, Response } from 'express';
+// import Cart from '../models/Cart';
+// import Product from '../models/Product';
+
+// /**
+//  * @desc    Add item to cart
+//  * @route   POST /api/cart
+//  */
+// export const addToCart = async (req: Request, res: Response) => {
+//     try {
+//         const { productId, variantId, quantity } = req.body;
+//         const userId = req.user!._id;
+
+//         // 1. പ്രോഡക്റ്റ് നിലവിലുണ്ടോ എന്ന് നോക്കുന്നു
+//         const product = await Product.findById(productId);
+//         if (!product) {
+//             res.status(404).json({ message: 'Product not found' });
+//             return;
+//         }
+
+//         // 2. Mongoose .id() മെത്തേഡ് ഉപയോഗിച്ച് വേരിയന്റ് കണ്ടെത്തുന്നു
+//         const variant = (product.variants as any).id(variantId);
+
+//         if (!variant) {
+//             res.status(400).json({ message: 'Selected variant not found' });
+//             return;
+//         }
+
+//         // 3. സ്റ്റോക്ക് പരിശോധന (പരിഷ്കരിച്ചത്)
+//         if (variant.stock <= 0) {
+//             res.status(400).json({ message: 'Selected variant is out of stock' });
+//             return;
+//         }
+
+//         // കസ്റ്റമർ ആവശ്യപ്പെട്ട ക്വാണ്ടിറ്റി സ്റ്റോക്കിനേക്കാൾ കൂടുതലാണോ എന്ന് നോക്കുന്നു
+//         if (Number(quantity) > variant.stock) {
+//             res.status(400).json({
+//                 message: `Only ${variant.stock} items left in stock. You cannot add ${quantity} items.`
+//             });
+//             return;
+//         }
+
+//         // 4. കാർട്ടിൽ ഓൾറെഡി ഈ വേരിയന്റ് ഉണ്ടോ എന്ന് നോക്കുന്നു
+//         let cartItem = await Cart.findOne({
+//             user: userId,
+//             product: productId,
+//             variantId: variantId
+//         });
+
+//         if (cartItem) {
+//             // ഉണ്ടെങ്കിൽ ക്വാണ്ടിറ്റി അപ്ഡേറ്റ് ചെയ്യുന്നു
+//             cartItem.quantity += Number(quantity) || 1;
+//             await cartItem.save();
+//         } else {
+//             // ഇല്ലെങ്കിൽ പുതിയ എൻട്രി ഉണ്ടാക്കുന്നു
+//             cartItem = await Cart.create({
+//                 user: userId,
+//                 product: productId,
+//                 variantId: variantId,
+//                 quantity: Number(quantity) || 1
+//             });
+//         }
+
+//         res.status(201).json(cartItem);
+//     } catch (error: any) {
+//         res.status(500).json({ message: error.message });
+//     }
+// };
+
+// /**
+//  * @desc    Get user cart items
+//  * @route   GET /api/cart
+//  */
+// export const getCart = async (req: Request, res: Response) => {
+//     try {
+//         const cartItems = await Cart.find({ user: req.user!._id })
+//             .populate('product', 'name mainImage slug variants');
+
+//         // 🔥 മാച്ച് ആകുന്ന വേരിയന്റ് മാത്രം ഓരോ ഐറ്റത്തിലും സെറ്റ് ചെയ്യുന്നു
+//         const formattedCart = cartItems.map((item: any) => {
+//             const productObj = item.product.toObject();
+
+//             // കാർട്ടിലെ variantId വെച്ച് പ്രോഡക്റ്റിലെ വേരിയന്റ് കണ്ടെത്തുന്നു
+//             const selectedVariant = productObj.variants.find(
+//                 (v: any) => v._id.toString() === item.variantId.toString()
+//             );
+
+//             return {
+//                 _id: item._id,
+//                 productId: productObj._id,
+//                 name: productObj.name,
+//                 slug: productObj.slug,
+//                 mainImage: productObj.mainImage,
+//                 quantity: item.quantity,
+//                 // ✅ ഇപ്പോൾ ആഡ് ചെയ്ത വേരിയന്റ് മാത്രം ഇവിടെ വരും
+//                 selectedVariant: selectedVariant || null
+//             };
+//         });
+
+//         res.json(formattedCart);
+//     } catch (error: any) {
+//         res.status(500).json({ message: error.message });
+//     }
+// };
+
+// /**
+//  * @desc    Update cart quantity
+//  * @route   PUT /api/cart/:id
+//  */
+// export const updateCartQuantity = async (req: Request, res: Response) => {
+//     try {
+//         const { quantity } = req.body;
+//         const requestedQuantity = Number(quantity);
+
+//         if (requestedQuantity < 1) {
+//             res.status(400).json({ message: 'Quantity must be at least 1' });
+//             return;
+//         }
+
+//         // കാർട്ട് ഐറ്റം കണ്ടെത്തുന്നു
+//         const cartItem = await Cart.findOne({ _id: req.params.id, user: req.user!._id });
+//         if (!cartItem) {
+//             res.status(404).json({ message: 'Cart item not found' });
+//             return;
+//         }
+
+//         // പ്രോഡക്റ്റും വേരിയന്റും ചെക്ക് ചെയ്ത് സ്റ്റോക്ക് ഉറപ്പുവരുത്തുന്നു
+//         const product = await Product.findById(cartItem.product);
+//         const variant = (product?.variants as any)?.id(cartItem.variantId);
+
+//         if (!variant || requestedQuantity > variant.stock) {
+//             res.status(400).json({
+//                 message: `Insufficient stock. Only ${variant?.stock || 0} left.`
+//             });
+//             return;
+//         }
+
+//         cartItem.quantity = requestedQuantity;
+//         await cartItem.save();
+
+//         res.json(cartItem);
+//     } catch (error: any) {
+//         res.status(500).json({ message: error.message });
+//     }
+// };
+
+// /**
+//  * @desc    Remove item from cart
+//  * @route   DELETE /api/cart/:id
+//  */
+// export const removeFromCart = async (req: Request, res: Response) => {
+//     try {
+//         const cartItem = await Cart.findOneAndDelete({
+//             _id: req.params.id,
+//             user: req.user!._id
+//         });
+
+//         if (cartItem) {
+//             res.json({ message: 'Item removed from cart' });
+//         } else {
+//             res.status(404).json({ message: 'Item not found' });
+//         }
+//     } catch (error: any) {
+//         res.status(500).json({ message: error.message });
+//     }
+// };
+
 import { Request, Response } from 'express';
 import Cart from '../models/Cart';
 import Product from '../models/Product';
 
-/**
- * @desc    Add item to cart
- * @route   POST /api/cart
- */
 export const addToCart = async (req: Request, res: Response) => {
     try {
-        const { productId, variantId, quantity } = req.body;
+        const { productId, variantId, sizeId, quantity } = req.body;
         const userId = req.user!._id;
 
-        // 1. പ്രോഡക്റ്റ് നിലവിലുണ്ടോ എന്ന് നോക്കുന്നു
         const product = await Product.findById(productId);
-        if (!product) {
-            res.status(404).json({ message: 'Product not found' });
-            return;
-        }
+        if (!product) return res.status(404).json({ message: 'Product not found' });
 
-        // 2. Mongoose .id() മെത്തേഡ് ഉപയോഗിച്ച് വേരിയന്റ് കണ്ടെത്തുന്നു
+        // 1. കളർ വേരിയന്റ് കണ്ടെത്തുന്നു
         const variant = (product.variants as any).id(variantId);
+        if (!variant) return res.status(400).json({ message: 'Selected color variant not found' });
 
-        if (!variant) {
-            res.status(400).json({ message: 'Selected variant not found' });
-            return;
+        // 2. ആ കളറിനുള്ളിലെ സൈസ് കണ്ടെത്തുന്നു
+        const sizeEntry = (variant.sizes as any).id(sizeId);
+        if (!sizeEntry) return res.status(400).json({ message: 'Selected size not found' });
+
+        // 3. സ്റ്റോക്ക് പരിശോധന (Size level)
+        if (sizeEntry.stock <= 0) {
+            return res.status(400).json({ message: 'Selected size is out of stock' });
         }
 
-        // 3. സ്റ്റോക്ക് പരിശോധന (പരിഷ്കരിച്ചത്)
-        if (variant.stock <= 0) {
-            res.status(400).json({ message: 'Selected variant is out of stock' });
-            return;
+        if (Number(quantity) > sizeEntry.stock) {
+            return res.status(400).json({ message: `Only ${sizeEntry.stock} items left in stock.` });
         }
 
-        // കസ്റ്റമർ ആവശ്യപ്പെട്ട ക്വാണ്ടിറ്റി സ്റ്റോക്കിനേക്കാൾ കൂടുതലാണോ എന്ന് നോക്കുന്നു
-        if (Number(quantity) > variant.stock) {
-            res.status(400).json({
-                message: `Only ${variant.stock} items left in stock. You cannot add ${quantity} items.`
-            });
-            return;
-        }
-
-        // 4. കാർട്ടിൽ ഓൾറെഡി ഈ വേരിയന്റ് ഉണ്ടോ എന്ന് നോക്കുന്നു
+        // 4. കാർട്ടിൽ ഓൾറെഡി ഉണ്ടോ എന്ന് നോക്കുന്നു (SizeId കൂടി വച്ച്)
         let cartItem = await Cart.findOne({
             user: userId,
             product: productId,
-            variantId: variantId
+            variantId,
+            sizeId
         });
 
         if (cartItem) {
-            // ഉണ്ടെങ്കിൽ ക്വാണ്ടിറ്റി അപ്ഡേറ്റ് ചെയ്യുന്നു
             cartItem.quantity += Number(quantity) || 1;
+            // അപ്ഡേറ്റ് ചെയ്ത ക്വാണ്ടിറ്റി സ്റ്റോക്കിനേക്കാൾ കൂടുന്നുണ്ടോ എന്ന് വീണ്ടും നോക്കുന്നു
+            if (cartItem.quantity > sizeEntry.stock) {
+                return res.status(400).json({ message: 'Total quantity exceeds available stock' });
+            }
             await cartItem.save();
         } else {
-            // ഇല്ലെങ്കിൽ പുതിയ എൻട്രി ഉണ്ടാക്കുന്നു
             cartItem = await Cart.create({
                 user: userId,
                 product: productId,
-                variantId: variantId,
+                variantId,
+                sizeId,
                 quantity: Number(quantity) || 1
             });
         }
@@ -165,33 +323,38 @@ export const addToCart = async (req: Request, res: Response) => {
     }
 };
 
-/**
- * @desc    Get user cart items
- * @route   GET /api/cart
- */
 export const getCart = async (req: Request, res: Response) => {
     try {
         const cartItems = await Cart.find({ user: req.user!._id })
             .populate('product', 'name mainImage slug variants');
 
-        // 🔥 മാച്ച് ആകുന്ന വേരിയന്റ് മാത്രം ഓരോ ഐറ്റത്തിലും സെറ്റ് ചെയ്യുന്നു
         const formattedCart = cartItems.map((item: any) => {
             const productObj = item.product.toObject();
 
-            // കാർട്ടിലെ variantId വെച്ച് പ്രോഡക്റ്റിലെ വേരിയന്റ് കണ്ടെത്തുന്നു
-            const selectedVariant = productObj.variants.find(
+            // ആഡ് ചെയ്ത കളർ വേരിയന്റ് കണ്ടെത്തുന്നു
+            const variant = productObj.variants.find(
                 (v: any) => v._id.toString() === item.variantId.toString()
+            );
+
+            // ആ കളറിലെ സ്പെസിഫിക് സൈസ് കണ്ടെത്തുന്നു
+            const sizeDetail = variant?.sizes.find(
+                (s: any) => s._id.toString() === item.sizeId.toString()
             );
 
             return {
                 _id: item._id,
                 productId: productObj._id,
+                variantId: item.variantId,
+                sizeId: item.sizeId,
                 name: productObj.name,
                 slug: productObj.slug,
                 mainImage: productObj.mainImage,
                 quantity: item.quantity,
-                // ✅ ഇപ്പോൾ ആഡ് ചെയ്ത വേരിയന്റ് മാത്രം ഇവിടെ വരും
-                selectedVariant: selectedVariant || null
+                color: variant?.color,
+                image: variant?.images[0] || productObj.mainImage,
+                size: sizeDetail?.size,
+                price: sizeDetail?.price,
+                stock: sizeDetail?.stock
             };
         });
 
@@ -201,63 +364,32 @@ export const getCart = async (req: Request, res: Response) => {
     }
 };
 
-/**
- * @desc    Update cart quantity
- * @route   PUT /api/cart/:id
- */
 export const updateCartQuantity = async (req: Request, res: Response) => {
     try {
         const { quantity } = req.body;
-        const requestedQuantity = Number(quantity);
-
-        if (requestedQuantity < 1) {
-            res.status(400).json({ message: 'Quantity must be at least 1' });
-            return;
-        }
-
-        // കാർട്ട് ഐറ്റം കണ്ടെത്തുന്നു
         const cartItem = await Cart.findOne({ _id: req.params.id, user: req.user!._id });
-        if (!cartItem) {
-            res.status(404).json({ message: 'Cart item not found' });
-            return;
-        }
+        if (!cartItem) return res.status(404).json({ message: 'Cart item not found' });
 
-        // പ്രോഡക്റ്റും വേരിയന്റും ചെക്ക് ചെയ്ത് സ്റ്റോക്ക് ഉറപ്പുവരുത്തുന്നു
         const product = await Product.findById(cartItem.product);
         const variant = (product?.variants as any)?.id(cartItem.variantId);
+        const sizeEntry = (variant?.sizes as any)?.id(cartItem.sizeId);
 
-        if (!variant || requestedQuantity > variant.stock) {
-            res.status(400).json({
-                message: `Insufficient stock. Only ${variant?.stock || 0} left.`
-            });
-            return;
+        if (!sizeEntry || Number(quantity) > sizeEntry.stock) {
+            return res.status(400).json({ message: 'Insufficient stock' });
         }
 
-        cartItem.quantity = requestedQuantity;
+        cartItem.quantity = Number(quantity);
         await cartItem.save();
-
         res.json(cartItem);
     } catch (error: any) {
         res.status(500).json({ message: error.message });
     }
 };
 
-/**
- * @desc    Remove item from cart
- * @route   DELETE /api/cart/:id
- */
 export const removeFromCart = async (req: Request, res: Response) => {
     try {
-        const cartItem = await Cart.findOneAndDelete({
-            _id: req.params.id,
-            user: req.user!._id
-        });
-
-        if (cartItem) {
-            res.json({ message: 'Item removed from cart' });
-        } else {
-            res.status(404).json({ message: 'Item not found' });
-        }
+        await Cart.findOneAndDelete({ _id: req.params.id, user: req.user!._id });
+        res.json({ message: 'Item removed' });
     } catch (error: any) {
         res.status(500).json({ message: error.message });
     }

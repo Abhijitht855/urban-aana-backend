@@ -122,197 +122,660 @@
 //   }
 // };
 
+// import { Request, Response } from 'express';
+// import Product from '../models/Product';
+
+// // @desc    Create a new product
+// // @route   POST /api/products
+// // @access  Private/Admin
+// export const createProduct = async (req: Request, res: Response) => {
+//   try {
+//     // 1. weight കൂടി ബോഡിയിൽ നിന്ന് എടുക്കുന്നു
+//     const { name, shortDescription, mainDescription, category, isFeatured, weight } = req.body;
+
+//     // 2. Files handle cheyyunnu (Main Product Image)
+//     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+//     const mainImageUrl = files['mainImage'] ? files['mainImage'][0].path : '';
+
+//     // 3. Variants logic handle cheyyunnu
+//     let variants = [];
+//     if (req.body.variants) {
+//       variants = JSON.parse(req.body.variants);
+
+//       const seen = new Set();
+//       for (const v of variants) {
+//         const identifier = `${v.size}-${v.color.toLowerCase().trim()}`;
+//         if (seen.has(identifier)) {
+//           res.status(400).json({
+//             message: `Duplicate variant found for Size: ${v.size} and Color: ${v.color}`
+//           });
+//           return;
+//         }
+//         seen.add(identifier);
+//       }
+//     }
+
+//     // 4. പുതിയ Product ഒബ്ജക്റ്റിൽ weight ചേർക്കുന്നു
+//     const product = new Product({
+//       name,
+//       shortDescription,
+//       mainDescription,
+//       category,
+//       mainImage: mainImageUrl,
+//       variants,
+//       weight: weight ? Number(weight) : 0.5, // 🔥 weight നൽകിയില്ലെങ്കിൽ default 0.5kg
+//       isFeatured: isFeatured === 'true' ? true : false,
+//     });
+
+//     const savedProduct = await product.save();
+//     res.status(201).json(savedProduct);
+
+//   } catch (error: any) {
+//     if (error.name === 'ValidationError') {
+//       res.status(400).json({ message: error.message });
+//       return;
+//     }
+//     console.error("Product Create Error:", error);
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// // @desc    Get all products
+// // @route   GET /api/products
+// export const getProducts = async (req: Request, res: Response) => {
+//   try {
+//     const products = await Product.find()
+//       .populate('category', 'name')
+//       .sort({ createdAt: -1 });
+//     res.json(products);
+//   } catch (error: any) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// // @desc    Get single product by ID
+// // @route   GET /api/products/:id
+// export const getProductById = async (req: Request, res: Response) => {
+//   try {
+//     const product = await Product.findById(req.params.id).populate('category', 'name');
+//     if (product) {
+//       res.json(product);
+//     } else {
+//       res.status(404).json({ message: 'Product not found' });
+//     }
+//   } catch (error: any) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// // @desc    Update a product
+// // @route   PUT /api/products/:id
+// // @access  Private/Admin
+// export const updateProduct = async (req: Request, res: Response) => {
+//   try {
+//     // 1. weight കൂടി ബോഡിയിൽ നിന്ന് എടുക്കുന്നു
+//     const { name, shortDescription, mainDescription, category, isFeatured, variants, weight } = req.body;
+//     const product = await Product.findById(req.params.id);
+
+//     if (!product) {
+//       res.status(404).json({ message: 'Product not found' });
+//       return;
+//     }
+
+//     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+//     if (files && files['mainImage']) {
+//       product.mainImage = files['mainImage'][0].path;
+//     }
+
+//     if (variants) {
+//       const parsedVariants = JSON.parse(variants);
+
+//       // Duplicate check
+//       const seen = new Set();
+//       for (const v of parsedVariants) {
+//         const identifier = `${v.size}-${v.color.toLowerCase().trim()}`;
+//         if (seen.has(identifier)) {
+//           res.status(400).json({
+//             message: `Duplicate variant found for Size: ${v.size} and Color: ${v.color}`
+//           });
+//           return;
+//         }
+//         seen.add(identifier);
+//       }
+
+//       // Step 1: _id check
+//       const hasVariantWithoutId = parsedVariants.some((v: any) => !v._id);
+//       if (hasVariantWithoutId) {
+//         res.status(400).json({
+//           message: 'All variants must include _id when updating.'
+//         });
+//         return;
+//       }
+
+//       // Step 2: Delete missing variants
+//       const incomingIds = parsedVariants.map((v: any) => v._id.toString());
+//       product.variants = product.variants.filter(
+//         (ev: any) => incomingIds.includes(ev._id.toString())
+//       ) as any;
+
+//       // Step 3: In-place update
+//       for (const v of parsedVariants) {
+//         const existing = product.variants.find(
+//           (ev: any) => ev._id.toString() === v._id.toString()
+//         );
+
+//         if (!existing) {
+//           res.status(400).json({
+//             message: `Invalid Variant ID: ${v._id}`
+//           });
+//           return;
+//         }
+
+//         (existing as any).set(v);
+//       }
+//     }
+
+//     // 2. ഇതര ഫീൽഡുകൾക്കൊപ്പം weight അപ്‌ഡേറ്റ് ചെയ്യുന്നു
+//     product.name = name || product.name;
+//     product.shortDescription = shortDescription || product.shortDescription;
+//     product.mainDescription = mainDescription || product.mainDescription;
+//     product.category = category || product.category;
+
+//     // 🔥 weight നൽകിയിട്ടുണ്ടെങ്കിൽ മാത്രം അപ്‌ഡേറ്റ് ചെയ്യുക
+//     if (weight !== undefined) {
+//       product.weight = Number(weight);
+//     }
+
+//     product.isFeatured = isFeatured === 'true' ? true : (isFeatured === 'false' ? false : product.isFeatured);
+
+//     const updatedProduct = await product.save();
+//     res.json(updatedProduct);
+
+//   } catch (error: any) {
+//     if (error.name === 'ValidationError') {
+//       res.status(400).json({ message: error.message });
+//       return;
+//     }
+//     console.error("Product Update Error:", error);
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// // @desc    Delete a product
+// // @route   DELETE /api/products/:id
+// // @access  Private/Admin
+// export const deleteProduct = async (req: Request, res: Response) => {
+//   try {
+//     const product = await Product.findById(req.params.id);
+//     if (product) {
+//       await product.deleteOne();
+//       res.json({ message: 'Product removed successfully' });
+//     } else {
+//       res.status(404).json({ message: 'Product not found' });
+//     }
+//   } catch (error: any) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// import { Request, Response } from 'express';
+// import Product from '../models/Product';
+// import Category from '../models/Category';
+
+// // ─── CREATE PRODUCT ──────────────────────────────────────────────────────────
+// export const createProduct = async (req: Request, res: Response) => {
+//   try {
+//     const { name, category, variants, weight, isFeatured, ...rest } = req.body;
+
+//     // 1. Category വാലിഡേഷൻ
+//     const categoryExists = await Category.findById(category);
+//     if (!categoryExists) {
+//       return res.status(400).json({ message: 'Invalid Category ID. Category does not exist.' });
+//     }
+
+//     // 2. Initial Variants നൽകിയിട്ടുണ്ടെങ്കിൽ ഡ്യൂപ്ലിക്കേറ്റ് കളർ ഉണ്ടോ എന്ന് നോക്കുക
+//     if (variants && Array.isArray(variants)) {
+//       const colors = variants.map((v: any) => v.color.toLowerCase().trim());
+//       const isDuplicate = colors.some((c, index) => colors.indexOf(c) !== index);
+//       if (isDuplicate) {
+//         return res.status(400).json({ message: 'Duplicate colors found in the variants list' });
+//       }
+//     }
+
+//     const product = new Product({
+//       name,
+//       category,
+//       variants: variants || [],
+//       weight: weight ? Number(weight) : 0.5,
+//       isFeatured: isFeatured === true || isFeatured === 'true',
+//       ...rest
+//     });
+
+//     const savedProduct = await product.save();
+//     res.status(201).json(savedProduct);
+//   } catch (error: any) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// // ─── GET OPERATIONS ──────────────────────────────────────────────────────────
+// export const getProducts = async (req: Request, res: Response) => {
+//   try {
+//     const products = await Product.find().populate('category', 'name').sort({ createdAt: -1 });
+//     res.json(products);
+//   } catch (error: any) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// export const getProductById = async (req: Request, res: Response) => {
+//   try {
+//     const product = await Product.findById(req.params.id).populate('category', 'name');
+//     if (!product) return res.status(404).json({ message: 'Product not found' });
+//     res.json(product);
+//   } catch (error: any) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// // ─── UPDATE PRODUCT (BASIC INFO ONLY) ────────────────────────────────────────
+// export const updateProduct = async (req: Request, res: Response) => {
+//   try {
+//     const { name, shortDescription, mainDescription, category, isFeatured, weight, mainImage } = req.body;
+    
+//     const product = await Product.findById(req.params.id);
+//     if (!product) return res.status(404).json({ message: 'Product not found' });
+
+//     // Category മാറ്റുന്നുണ്ടെങ്കിൽ അത് വാലിഡ് ആണോ എന്ന് നോക്കുക
+//     if (category) {
+//       const categoryExists = await Category.findById(category);
+//       if (!categoryExists) return res.status(400).json({ message: 'Invalid Category ID' });
+//       product.category = category;
+//     }
+
+//     if (name) product.name = name;
+//     if (shortDescription) product.shortDescription = shortDescription;
+//     if (mainDescription) product.mainDescription = mainDescription;
+//     if (mainImage) product.mainImage = mainImage;
+//     if (weight !== undefined) product.weight = Number(weight);
+//     if (isFeatured !== undefined) {
+//       product.isFeatured = isFeatured === true || isFeatured === 'true';
+//     }
+
+//     // ശ്രദ്ധിക്കുക: ഇവിടെ product.variants അപ്‌ഡേറ്റ് ചെയ്യുന്നില്ല.
+//     await product.save();
+//     res.json(product);
+//   } catch (error: any) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// // ─── DELETE PRODUCT ──────────────────────────────────────────────────────────
+// export const deleteProduct = async (req: Request, res: Response) => {
+//   try {
+//     const product = await Product.findByIdAndDelete(req.params.id);
+//     if (!product) return res.status(404).json({ message: 'Product not found' });
+//     res.json({ message: 'Product removed successfully' });
+//   } catch (error: any) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// // ─── ATOMIC VARIANT OPERATIONS ───────────────────────────────────────────────
+
+// export const addVariant = async (req: Request, res: Response) => {
+//   try {
+//     const { color, images, sizes } = req.body;
+//     const product = await Product.findById(req.params.id);
+//     if (!product) return res.status(404).json({ message: 'Product not found' });
+
+//     // കളർ ഡ്യൂപ്ലിക്കേഷൻ ചെക്ക്
+//     const colorExists = product.variants.some(
+//       v => v.color.toLowerCase().trim() === color.toLowerCase().trim()
+//     );
+//     if (colorExists) return res.status(400).json({ message: `Color "${color}" already exists` });
+
+//     product.variants.push({ color, images, sizes });
+//     await product.save();
+//     res.status(201).json(product);
+//   } catch (error: any) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// export const updateVariant = async (req: Request, res: Response) => {
+//   try {
+//     const { color, images } = req.body; // sizes ഇവിടെ എടുക്കുന്നില്ല
+//     const product = await Product.findById(req.params.id);
+//     if (!product) return res.status(404).json({ message: 'Product not found' });
+
+//     const variant = product.variants.id(req.params.variantId as any);
+//     if (!variant) return res.status(404).json({ message: 'Variant not found' });
+
+//     // കളർ മാറ്റുന്നുണ്ടെങ്കിൽ അത് മറ്റൊരു വേരിയന്റുമായി ഡ്യൂപ്ലിക്കേറ്റ് ആകുന്നുണ്ടോ എന്ന് നോക്കുക
+//     if (color && color.toLowerCase().trim() !== variant.color.toLowerCase().trim()) {
+//       const colorExists = product.variants.some(
+//         v => v.color.toLowerCase().trim() === color.toLowerCase().trim()
+//       );
+//       if (colorExists) return res.status(400).json({ message: 'Color name already exists' });
+//       variant.color = color;
+//     }
+
+//     if (images) variant.images = images;
+
+//     await product.save();
+//     res.json(product);
+//   } catch (error: any) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// export const deleteVariant = async (req: Request, res: Response) => {
+//   try {
+//     const product = await Product.findById(req.params.id);
+//     if (!product) return res.status(404).json({ message: 'Product not found' });
+
+//     (product.variants as any).pull(req.params.variantId);
+//     await product.save();
+//     res.json({ message: 'Variant removed successfully' });
+//   } catch (error: any) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// // ─── ATOMIC SIZE OPERATIONS ──────────────────────────────────────────────────
+
+// export const addSize = async (req: Request, res: Response) => {
+//   try {
+//     const { size, stock, price } = req.body;
+//     const product = await Product.findById(req.params.id);
+//     if (!product) return res.status(404).json({ message: 'Product not found' });
+
+//     const variant = product.variants.id(req.params.variantId as any);
+//     if (!variant) return res.status(404).json({ message: 'Variant not found' });
+
+//     // സൈസ് ഡ്യൂപ്ലിക്കേഷൻ ചെക്ക്
+//     const sizeExists = variant.sizes.some(s => s.size === size);
+//     if (sizeExists) return res.status(400).json({ message: `Size "${size}" already exists for this color` });
+
+//     variant.sizes.push({ size, stock, price });
+//     await product.save();
+//     res.status(201).json(product);
+//   } catch (error: any) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
+// export const updateSize = async (req: Request, res: Response) => {
+//   try {
+//     const { stock, price, size } = req.body;
+//     const product = await Product.findById(req.params.id);
+//     if (!product) return res.status(404).json({ message: 'Product not found' });
+
+//     const variant = product.variants.id(req.params.variantId as any);
+//     if (!variant) return res.status(404).json({ message: 'Variant not found' });
+
+//     const sizeEntry = variant.sizes.id(req.params.sizeId as any);
+//     if (!sizeEntry) return res.status(404).json({ message: 'Size entry not found' });
+
+//     // സൈസ് മാറ്റുന്നുണ്ടെങ്കിൽ ഡ്യൂപ്ലിക്കേറ്റ് ചെക്ക് (ഉദാ: M-ൽ നിന്ന് L-ലേക്ക് മാറ്റുമ്പോൾ)
+//     if (size && size !== sizeEntry.size) {
+//       const sizeExists = variant.sizes.some(s => s.size === size);
+//       if (sizeExists) return res.status(400).json({ message: 'Size already exists' });
+//       sizeEntry.size = size;
+//     }
+
+//     if (stock !== undefined) sizeEntry.stock = stock;
+//     if (price !== undefined) sizeEntry.price = price;
+
+//     await product.save();
+//     res.json(product);
+//   } catch (error: any) {
+//     res.status(500).json({ message: error.message });
+//   }
+// };
+
 import { Request, Response } from 'express';
 import Product from '../models/Product';
+import Category from '../models/Category';
 
-// @desc    Create a new product
-// @route   POST /api/products
-// @access  Private/Admin
+// --- HELPER: അനുവദനീയമല്ലാത്ത ഫീൽഡുകൾ ഉണ്ടോ എന്ന് പരിശോധിക്കാൻ ---
+const checkExtraFields = (allowedFields: string[], body: any): string | null => {
+  const extraFields = Object.keys(body).filter(key => !allowedFields.includes(key));
+  if (extraFields.length > 0) {
+    return `Extra fields not allowed: ${extraFields.join(', ')}`;
+  }
+  return null;
+};
+
+// ─── CREATE PRODUCT ──────────────────────────────────────────────────────────
 export const createProduct = async (req: Request, res: Response) => {
   try {
-    // 1. weight കൂടി ബോഡിയിൽ നിന്ന് എടുക്കുന്നു
-    const { name, shortDescription, mainDescription, category, isFeatured, weight } = req.body;
+    const allowed = ['name', 'shortDescription', 'mainDescription', 'category', 'mainImage', 'weight', 'isFeatured', 'variants'];
+    const extraError = checkExtraFields(allowed, req.body);
+    if (extraError) return res.status(400).json({ message: extraError });
 
-    // 2. Files handle cheyyunnu (Main Product Image)
-    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-    const mainImageUrl = files['mainImage'] ? files['mainImage'][0].path : '';
+    const { name, category, variants, weight, isFeatured, ...rest } = req.body;
 
-    // 3. Variants logic handle cheyyunnu
-    let variants = [];
-    if (req.body.variants) {
-      variants = JSON.parse(req.body.variants);
+    // Category Validation
+    const categoryExists = await Category.findById(category);
+    if (!categoryExists) {
+      return res.status(400).json({ message: 'Invalid Category ID. Category does not exist.' });
+    }
 
-      const seen = new Set();
-      for (const v of variants) {
-        const identifier = `${v.size}-${v.color.toLowerCase().trim()}`;
-        if (seen.has(identifier)) {
-          res.status(400).json({
-            message: `Duplicate variant found for Size: ${v.size} and Color: ${v.color}`
-          });
-          return;
-        }
-        seen.add(identifier);
+    // Initial Variant Duplicate Color Check
+    if (variants && Array.isArray(variants)) {
+      const colors = variants.map((v: any) => v.color.toLowerCase().trim());
+      const isDuplicate = colors.some((c, index) => colors.indexOf(c) !== index);
+      if (isDuplicate) {
+        return res.status(400).json({ message: 'Duplicate colors found in the variants list' });
       }
     }
 
-    // 4. പുതിയ Product ഒബ്ജക്റ്റിൽ weight ചേർക്കുന്നു
     const product = new Product({
       name,
-      shortDescription,
-      mainDescription,
       category,
-      mainImage: mainImageUrl,
-      variants,
-      weight: weight ? Number(weight) : 0.5, // 🔥 weight നൽകിയില്ലെങ്കിൽ default 0.5kg
-      isFeatured: isFeatured === 'true' ? true : false,
+      variants: variants || [],
+      weight: weight ? Number(weight) : 0.5,
+      isFeatured: isFeatured === true || isFeatured === 'true',
+      ...rest
     });
 
     const savedProduct = await product.save();
     res.status(201).json(savedProduct);
-
   } catch (error: any) {
-    if (error.name === 'ValidationError') {
-      res.status(400).json({ message: error.message });
-      return;
-    }
-    console.error("Product Create Error:", error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Get all products
-// @route   GET /api/products
+// ─── GET OPERATIONS ──────────────────────────────────────────────────────────
 export const getProducts = async (req: Request, res: Response) => {
   try {
-    const products = await Product.find()
-      .populate('category', 'name')
-      .sort({ createdAt: -1 });
+    const products = await Product.find().populate('category', 'name').sort({ createdAt: -1 });
     res.json(products);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Get single product by ID
-// @route   GET /api/products/:id
 export const getProductById = async (req: Request, res: Response) => {
   try {
     const product = await Product.findById(req.params.id).populate('category', 'name');
-    if (product) {
-      res.json(product);
-    } else {
-      res.status(404).json({ message: 'Product not found' });
-    }
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+    res.json(product);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Update a product
-// @route   PUT /api/products/:id
-// @access  Private/Admin
+// ─── UPDATE PRODUCT (BASIC INFO ONLY) ────────────────────────────────────────
 export const updateProduct = async (req: Request, res: Response) => {
   try {
-    // 1. weight കൂടി ബോഡിയിൽ നിന്ന് എടുക്കുന്നു
-    const { name, shortDescription, mainDescription, category, isFeatured, variants, weight } = req.body;
+    // ഇവിടെ 'variants' പാസ്സ് ചെയ്താൽ എറർ വരും
+    const allowed = ['name', 'shortDescription', 'mainDescription', 'category', 'isFeatured', 'weight', 'mainImage'];
+    const extraError = checkExtraFields(allowed, req.body);
+    if (extraError) return res.status(400).json({ message: extraError });
+
+    const { name, shortDescription, mainDescription, category, isFeatured, weight, mainImage } = req.body;
+    
     const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    if (!product) {
-      res.status(404).json({ message: 'Product not found' });
-      return;
+    if (category) {
+      const categoryExists = await Category.findById(category);
+      if (!categoryExists) return res.status(400).json({ message: 'Invalid Category ID' });
+      product.category = category;
     }
 
-    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-    if (files && files['mainImage']) {
-      product.mainImage = files['mainImage'][0].path;
+    if (name) product.name = name;
+    if (shortDescription) product.shortDescription = shortDescription;
+    if (mainDescription) product.mainDescription = mainDescription;
+    if (mainImage) product.mainImage = mainImage;
+    if (weight !== undefined) product.weight = Number(weight);
+    if (isFeatured !== undefined) {
+      product.isFeatured = isFeatured === true || isFeatured === 'true';
     }
 
-    if (variants) {
-      const parsedVariants = JSON.parse(variants);
-
-      // Duplicate check
-      const seen = new Set();
-      for (const v of parsedVariants) {
-        const identifier = `${v.size}-${v.color.toLowerCase().trim()}`;
-        if (seen.has(identifier)) {
-          res.status(400).json({
-            message: `Duplicate variant found for Size: ${v.size} and Color: ${v.color}`
-          });
-          return;
-        }
-        seen.add(identifier);
-      }
-
-      // Step 1: _id check
-      const hasVariantWithoutId = parsedVariants.some((v: any) => !v._id);
-      if (hasVariantWithoutId) {
-        res.status(400).json({
-          message: 'All variants must include _id when updating.'
-        });
-        return;
-      }
-
-      // Step 2: Delete missing variants
-      const incomingIds = parsedVariants.map((v: any) => v._id.toString());
-      product.variants = product.variants.filter(
-        (ev: any) => incomingIds.includes(ev._id.toString())
-      ) as any;
-
-      // Step 3: In-place update
-      for (const v of parsedVariants) {
-        const existing = product.variants.find(
-          (ev: any) => ev._id.toString() === v._id.toString()
-        );
-
-        if (!existing) {
-          res.status(400).json({
-            message: `Invalid Variant ID: ${v._id}`
-          });
-          return;
-        }
-
-        (existing as any).set(v);
-      }
-    }
-
-    // 2. ഇതര ഫീൽഡുകൾക്കൊപ്പം weight അപ്‌ഡേറ്റ് ചെയ്യുന്നു
-    product.name = name || product.name;
-    product.shortDescription = shortDescription || product.shortDescription;
-    product.mainDescription = mainDescription || product.mainDescription;
-    product.category = category || product.category;
-
-    // 🔥 weight നൽകിയിട്ടുണ്ടെങ്കിൽ മാത്രം അപ്‌ഡേറ്റ് ചെയ്യുക
-    if (weight !== undefined) {
-      product.weight = Number(weight);
-    }
-
-    product.isFeatured = isFeatured === 'true' ? true : (isFeatured === 'false' ? false : product.isFeatured);
-
-    const updatedProduct = await product.save();
-    res.json(updatedProduct);
-
+    await product.save();
+    res.json(product);
   } catch (error: any) {
-    if (error.name === 'ValidationError') {
-      res.status(400).json({ message: error.message });
-      return;
-    }
-    console.error("Product Update Error:", error);
     res.status(500).json({ message: error.message });
   }
 };
 
-// @desc    Delete a product
-// @route   DELETE /api/products/:id
-// @access  Private/Admin
+// ─── DELETE PRODUCT ──────────────────────────────────────────────────────────
 export const deleteProduct = async (req: Request, res: Response) => {
   try {
+    const product = await Product.findByIdAndDelete(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+    res.json({ message: 'Product removed successfully' });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── ATOMIC VARIANT OPERATIONS ───────────────────────────────────────────────
+
+export const addVariant = async (req: Request, res: Response) => {
+  try {
+    const allowed = ['color', 'images', 'sizes'];
+    const extraError = checkExtraFields(allowed, req.body);
+    if (extraError) return res.status(400).json({ message: extraError });
+
+    const { color, images, sizes } = req.body;
     const product = await Product.findById(req.params.id);
-    if (product) {
-      await product.deleteOne();
-      res.json({ message: 'Product removed successfully' });
-    } else {
-      res.status(404).json({ message: 'Product not found' });
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    const colorExists = product.variants.some(
+      v => v.color.toLowerCase().trim() === color.toLowerCase().trim()
+    );
+    if (colorExists) return res.status(400).json({ message: `Color "${color}" already exists` });
+
+    product.variants.push({ color, images, sizes });
+    await product.save();
+    res.status(201).json(product);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const updateVariant = async (req: Request, res: Response) => {
+  try {
+    // 'sizes' പാസ്സ് ചെയ്താൽ എറർ വരും
+    const allowed = ['color', 'images'];
+    const extraError = checkExtraFields(allowed, req.body);
+    if (extraError) return res.status(400).json({ message: extraError });
+
+    const { color, images } = req.body;
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    const variant = product.variants.id(req.params.variantId as any);
+    if (!variant) return res.status(404).json({ message: 'Variant not found' });
+
+    if (color && color.toLowerCase().trim() !== variant.color.toLowerCase().trim()) {
+      const colorExists = product.variants.some(
+        v => v.color.toLowerCase().trim() === color.toLowerCase().trim()
+      );
+      if (colorExists) return res.status(400).json({ message: 'Color name already exists' });
+      variant.color = color;
     }
+
+    if (images) variant.images = images;
+
+    await product.save();
+    res.json(product);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const deleteVariant = async (req: Request, res: Response) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    (product.variants as any).pull(req.params.variantId);
+    await product.save();
+    res.json({ message: 'Variant removed successfully' });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ─── ATOMIC SIZE OPERATIONS ──────────────────────────────────────────────────
+
+export const addSize = async (req: Request, res: Response) => {
+  try {
+    const allowed = ['size', 'stock', 'price'];
+    const extraError = checkExtraFields(allowed, req.body);
+    if (extraError) return res.status(400).json({ message: extraError });
+
+    const { size, stock, price } = req.body;
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    const variant = product.variants.id(req.params.variantId as any);
+    if (!variant) return res.status(404).json({ message: 'Variant not found' });
+
+    const sizeExists = variant.sizes.some(s => s.size === size);
+    if (sizeExists) return res.status(400).json({ message: `Size "${size}" already exists for this color` });
+
+    variant.sizes.push({ size, stock, price });
+    await product.save();
+    res.status(201).json(product);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const updateSize = async (req: Request, res: Response) => {
+  try {
+    const allowed = ['size', 'stock', 'price'];
+    const extraError = checkExtraFields(allowed, req.body);
+    if (extraError) return res.status(400).json({ message: extraError });
+
+    const { stock, price, size } = req.body;
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    const variant = product.variants.id(req.params.variantId as any);
+    if (!variant) return res.status(404).json({ message: 'Variant not found' });
+
+    const sizeEntry = variant.sizes.id(req.params.sizeId as any);
+    if (!sizeEntry) return res.status(404).json({ message: 'Size entry not found' });
+
+    if (size && size !== sizeEntry.size) {
+      const sizeExists = variant.sizes.some(s => s.size === size);
+      if (sizeExists) return res.status(400).json({ message: 'Size already exists' });
+      sizeEntry.size = size;
+    }
+
+    if (stock !== undefined) sizeEntry.stock = stock;
+    if (price !== undefined) sizeEntry.price = price;
+
+    await product.save();
+    res.json(product);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
