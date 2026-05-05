@@ -168,20 +168,23 @@ app.use((req: Request, res: Response) => {
 });
 
 const allowedOrigins = [
-  'http://localhost:3000', // local frontend
-  process.env.CLIENT_URL  // production frontend
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://urbanaana.com'
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // allow requests with no origin (like Postman)
+    console.log("Incoming Origin:", origin);
+
+    // allow Postman / server-to-server
     if (!origin) return callback(null, true);
 
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
-    } else {
-      return callback(new Error('Not allowed by CORS'));
     }
+
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
 }));
