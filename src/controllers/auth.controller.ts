@@ -253,3 +253,17 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({ message: 'Server error', error });
   }
 };
+
+/**
+ * @desc    Get All Users
+ * @route   GET /api/auth/users
+ * @access  Private/Admin
+ */
+export const getAllUsers = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const users = await User.find({}).select('-password').sort({ createdAt: -1 })
+    res.json(users)
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error })
+  }
+}

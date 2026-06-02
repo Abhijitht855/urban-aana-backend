@@ -382,7 +382,7 @@
 // export const updateProduct = async (req: Request, res: Response) => {
 //   try {
 //     const { name, shortDescription, mainDescription, category, isFeatured, weight, mainImage } = req.body;
-    
+
 //     const product = await Product.findById(req.params.id);
 //     if (!product) return res.status(404).json({ message: 'Product not found' });
 
@@ -557,32 +557,38 @@ export const createProduct = async (req: Request, res: Response) => {
 
     const { name, category, variants, weight, isFeatured, ...rest } = req.body;
 
-    // Category Validation
     const categoryExists = await Category.findById(category);
-    if (!categoryExists) {
-      return res.status(400).json({ message: 'Invalid Category ID. Category does not exist.' });
+    if (!categoryExists) return res.status(400).json({ message: 'Invalid Category ID.' });
+
+    // 🔥 വെയിറ്റ് വാലിഡേഷൻ
+    if (weight !== undefined && Number(weight) <= 0) {
+      return res.status(400).json({ message: 'Weight must be a positive number' });
     }
 
-    // Initial Variant Duplicate Color Check
     if (variants && Array.isArray(variants)) {
       const colors = variants.map((v: any) => v.color.toLowerCase().trim());
-      const isDuplicate = colors.some((c, index) => colors.indexOf(c) !== index);
-      if (isDuplicate) {
-        return res.status(400).json({ message: 'Duplicate colors found in the variants list' });
+      if (colors.some((c, index) => colors.indexOf(c) !== index)) {
+        return res.status(400).json({ message: 'Duplicate colors found in variants' });
+      }
+
+      // 🔥 വകഭേദങ്ങളിലെ വിലയും സ്റ്റോക്കും പരിശോധിക്കുന്നു
+      for (const v of variants) {
+        for (const s of v.sizes) {
+          if (s.price <= 0) return res.status(400).json({ message: `Price must be > 0 for size ${s.size}` });
+          if (s.stock < 0) return res.status(400).json({ message: `Stock cannot be negative for size ${s.size}` });
+        }
       }
     }
 
     const product = new Product({
-      name,
-      category,
-      variants: variants || [],
+      name, category, variants: variants || [],
       weight: weight ? Number(weight) : 0.5,
       isFeatured: isFeatured === true || isFeatured === 'true',
       ...rest
     });
 
-    const savedProduct = await product.save();
-    res.status(201).json(savedProduct);
+    await product.save();
+    res.status(201).json(product);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -591,12 +597,17 @@ export const createProduct = async (req: Request, res: Response) => {
 // ─── GET OPERATIONS ──────────────────────────────────────────────────────────
 export const getProducts = async (req: Request, res: Response) => {
   try {
-    const products = await Product.find().populate('category', 'name').sort({ createdAt: -1 });
+    // 🔥 മാറ്റം: പണ്ടത്തെ പോലെ ലളിതമായി ഡാറ്റ ഫെച്ച് ചെയ്യുന്നു
+    const products = await Product.find()
+      .populate('category', 'name')
+      .sort({ createdAt: -1 });
+
     res.json(products);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
+
 
 export const getProductById = async (req: Request, res: Response) => {
   try {
@@ -611,31 +622,31 @@ export const getProductById = async (req: Request, res: Response) => {
 // ─── UPDATE PRODUCT (BASIC INFO ONLY) ────────────────────────────────────────
 export const updateProduct = async (req: Request, res: Response) => {
   try {
-    // ഇവിടെ 'variants' പാസ്സ് ചെയ്താൽ എറർ വരും
     const allowed = ['name', 'shortDescription', 'mainDescription', 'category', 'isFeatured', 'weight', 'mainImage'];
     const extraError = checkExtraFields(allowed, req.body);
     if (extraError) return res.status(400).json({ message: extraError });
 
-    const { name, shortDescription, mainDescription, category, isFeatured, weight, mainImage } = req.body;
-    
+    const { category, weight, isFeatured, ...updateData } = req.body;
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
     if (category) {
-      const categoryExists = await Category.findById(category);
-      if (!categoryExists) return res.status(400).json({ message: 'Invalid Category ID' });
+      const exists = await Category.findById(category);
+      if (!exists) return res.status(400).json({ message: 'Invalid Category ID' });
       product.category = category;
     }
 
-    if (name) product.name = name;
-    if (shortDescription) product.shortDescription = shortDescription;
-    if (mainDescription) product.mainDescription = mainDescription;
-    if (mainImage) product.mainImage = mainImage;
-    if (weight !== undefined) product.weight = Number(weight);
+    // 🔥 വെയിറ്റ് 0 ആകാൻ പാടില്ല
+    if (weight !== undefined) {
+      if (Number(weight) <= 0) return res.status(400).json({ message: 'Weight must be greater than 0' });
+      product.weight = Number(weight);
+    }
+
     if (isFeatured !== undefined) {
       product.isFeatured = isFeatured === true || isFeatured === 'true';
     }
-
+    
+    Object.assign(product, updateData);
     await product.save();
     res.json(product);
   } catch (error: any) {
@@ -727,19 +738,22 @@ export const deleteVariant = async (req: Request, res: Response) => {
 
 export const addSize = async (req: Request, res: Response) => {
   try {
-    const allowed = ['size', 'stock', 'price'];
-    const extraError = checkExtraFields(allowed, req.body);
-    if (extraError) return res.status(400).json({ message: extraError });
-
     const { size, stock, price } = req.body;
+    
+    // 🔥 വാലിഡേഷൻ
+    if (price <= 0) return res.status(400).json({ message: 'Price must be greater than 0' });
+    if (stock < 0) return res.status(400).json({ message: 'Stock cannot be negative' });
+
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
     const variant = product.variants.id(req.params.variantId as any);
     if (!variant) return res.status(404).json({ message: 'Variant not found' });
 
-    const sizeExists = variant.sizes.some(s => s.size === size);
-    if (sizeExists) return res.status(400).json({ message: `Size "${size}" already exists for this color` });
+    // സൈസ് ഡ്യൂപ്ലിക്കേഷൻ ചെക്ക്
+    if (variant.sizes.some(s => s.size === size)) {
+      return res.status(400).json({ message: `Size "${size}" already exists` });
+    }
 
     variant.sizes.push({ size, stock, price });
     await product.save();
@@ -751,30 +765,28 @@ export const addSize = async (req: Request, res: Response) => {
 
 export const updateSize = async (req: Request, res: Response) => {
   try {
-    const allowed = ['size', 'stock', 'price'];
-    const extraError = checkExtraFields(allowed, req.body);
-    if (extraError) return res.status(400).json({ message: extraError });
-
     const { stock, price, size } = req.body;
+
     const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ message: 'Product not found' });
+    const variant = product?.variants.id(req.params.variantId as any);
+    const sizeEntry = variant?.sizes.id(req.params.sizeId as any);
 
-    const variant = product.variants.id(req.params.variantId as any);
-    if (!variant) return res.status(404).json({ message: 'Variant not found' });
-
-    const sizeEntry = variant.sizes.id(req.params.sizeId as any);
     if (!sizeEntry) return res.status(404).json({ message: 'Size entry not found' });
 
+    // 🔥 വിലയും സ്റ്റോക്കും പോസിറ്റീവ് ആണെന്ന് ഉറപ്പാക്കുന്നു
+    if (price !== undefined && price <= 0) return res.status(400).json({ message: 'Price must be greater than 0' });
+    if (stock !== undefined && stock < 0) return res.status(400).json({ message: 'Stock cannot be negative' });
+
+    // സൈസ് പേര് മാറ്റുകയാണെങ്കിൽ (ഉദാ: M-ൽ നിന്ന് L-ലേക്ക്)
     if (size && size !== sizeEntry.size) {
-      const sizeExists = variant.sizes.some(s => s.size === size);
-      if (sizeExists) return res.status(400).json({ message: 'Size already exists' });
+      if (variant?.sizes.some(s => s.size === size)) return res.status(400).json({ message: 'Size already exists' });
       sizeEntry.size = size;
     }
 
     if (stock !== undefined) sizeEntry.stock = stock;
     if (price !== undefined) sizeEntry.price = price;
 
-    await product.save();
+    await product?.save();
     res.json(product);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

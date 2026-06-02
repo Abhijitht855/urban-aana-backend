@@ -28,9 +28,10 @@ import {
   login, 
   getMe, 
   refresh, 
-  logout 
+  logout, 
+  getAllUsers
 } from '../controllers/auth.controller';
-import { protect } from '../middlewares/auth.middleware';
+import { adminOnly, protect } from '../middlewares/auth.middleware';
 import { body } from 'express-validator';
 
 const router = Router();
@@ -53,5 +54,6 @@ router.post('/login', loginValidation, login);
 router.post('/refresh-token', refresh);
 router.post('/logout', logout);
 router.get('/me', protect, getMe);
+router.get('/users', protect, adminOnly, getAllUsers); 
 
 export default router;

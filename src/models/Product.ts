@@ -198,7 +198,16 @@ const productSchema = new Schema<IProduct>(
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
     mainImage: { type: String, required: true },
     weight: { type: Number, default: 0.5 },
-    variants: [variantSchema],
+    variants: {
+      type: [variantSchema],
+      validate: {
+        validator: function (v: any) {
+          const colors = v.map((item: any) => item.color.toLowerCase().trim());
+          return colors.length === new Set(colors).size;
+        },
+        message: 'Duplicate color variants are not allowed'
+      }
+    },
     isFeatured: { type: Boolean, default: false },
   },
   { timestamps: true }

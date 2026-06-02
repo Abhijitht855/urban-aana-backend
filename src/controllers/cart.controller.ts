@@ -270,53 +270,28 @@ import Product from '../models/Product';
 export const addToCart = async (req: Request, res: Response) => {
     try {
         const { productId, variantId, sizeId, quantity } = req.body;
-        const userId = req.user!._id;
+        if (!quantity || quantity < 1) return res.status(400).json({ message: 'Quantity must be at least 1' });
 
         const product = await Product.findById(productId);
         if (!product) return res.status(404).json({ message: 'Product not found' });
 
-        // 1. കളർ വേരിയന്റ് കണ്ടെത്തുന്നു
-        const variant = (product.variants as any).id(variantId);
-        if (!variant) return res.status(400).json({ message: 'Selected color variant not found' });
+        const variant = product.variants.id(variantId);
+        const sizeEntry = variant?.sizes.id(sizeId);
 
-        // 2. ആ കളറിനുള്ളിലെ സൈസ് കണ്ടെത്തുന്നു
-        const sizeEntry = (variant.sizes as any).id(sizeId);
-        if (!sizeEntry) return res.status(400).json({ message: 'Selected size not found' });
+        if (!sizeEntry) return res.status(400).json({ message: 'Variant or Size not found' });
+        if (sizeEntry.stock <= 0) return res.status(400).json({ message: 'Out of stock' });
+        if (quantity > sizeEntry.stock) return res.status(400).json({ message: `Only ${sizeEntry.stock} left` });
 
-        // 3. സ്റ്റോക്ക് പരിശോധന (Size level)
-        if (sizeEntry.stock <= 0) {
-            return res.status(400).json({ message: 'Selected size is out of stock' });
-        }
-
-        if (Number(quantity) > sizeEntry.stock) {
-            return res.status(400).json({ message: `Only ${sizeEntry.stock} items left in stock.` });
-        }
-
-        // 4. കാർട്ടിൽ ഓൾറെഡി ഉണ്ടോ എന്ന് നോക്കുന്നു (SizeId കൂടി വച്ച്)
-        let cartItem = await Cart.findOne({
-            user: userId,
-            product: productId,
-            variantId,
-            sizeId
-        });
+        let cartItem = await Cart.findOne({ user: req.user!._id, product: productId, variantId, sizeId });
 
         if (cartItem) {
-            cartItem.quantity += Number(quantity) || 1;
-            // അപ്ഡേറ്റ് ചെയ്ത ക്വാണ്ടിറ്റി സ്റ്റോക്കിനേക്കാൾ കൂടുന്നുണ്ടോ എന്ന് വീണ്ടും നോക്കുന്നു
-            if (cartItem.quantity > sizeEntry.stock) {
-                return res.status(400).json({ message: 'Total quantity exceeds available stock' });
-            }
+            const newQty = cartItem.quantity + Number(quantity);
+            if (newQty > sizeEntry.stock) return res.status(400).json({ message: 'Total exceeds stock' });
+            cartItem.quantity = newQty;
             await cartItem.save();
         } else {
-            cartItem = await Cart.create({
-                user: userId,
-                product: productId,
-                variantId,
-                sizeId,
-                quantity: Number(quantity) || 1
-            });
+            cartItem = await Cart.create({ user: req.user!._id, product: productId, variantId, sizeId, quantity });
         }
-
         res.status(201).json(cartItem);
     } catch (error: any) {
         res.status(500).json({ message: error.message });
@@ -325,27 +300,23 @@ export const addToCart = async (req: Request, res: Response) => {
 
 export const getCart = async (req: Request, res: Response) => {
     try {
-        const cartItems = await Cart.find({ user: req.user!._id })
-            .populate('product', 'name mainImage slug variants');
+        const cartItems = await Cart.find({ user: req.user!._id }).populate('product');
 
         let totalPrice = 0;
         let totalQuantity = 0;
 
         const formattedCart = cartItems.map((item: any) => {
+            // പ്രൊഡക്റ്റ് ഡിലീറ്റ് ചെയ്യപ്പെട്ടാൽ ആ ഐറ്റം സ്കിപ്പ് ചെയ്യണം
+            if (!item.product) return null;
+
             const productObj = item.product.toObject();
+            const variant = productObj.variants.find((v: any) => v._id.toString() === item.variantId.toString());
+            const sizeDetail = variant?.sizes.find((s: any) => s._id.toString() === item.sizeId.toString());
 
-            const variant = productObj.variants.find(
-                (v: any) => v._id.toString() === item.variantId.toString()
-            );
+            if (!sizeDetail) return null; // സൈസ് മാറ്റപ്പെട്ടാലും സ്കിപ്പ് ചെയ്യും
 
-            const sizeDetail = variant?.sizes.find(
-                (s: any) => s._id.toString() === item.sizeId.toString()
-            );
-
-            const price = sizeDetail?.price || 0;
+            const price = sizeDetail.price || 0;
             const subtotal = price * item.quantity;
-
-            // 🔥 accumulate totals
             totalPrice += subtotal;
             totalQuantity += item.quantity;
 
@@ -360,20 +331,14 @@ export const getCart = async (req: Request, res: Response) => {
                 quantity: item.quantity,
                 color: variant?.color,
                 image: variant?.images[0] || productObj.mainImage,
-                size: sizeDetail?.size,
+                size: sizeDetail.size,
                 price,
-                stock: sizeDetail?.stock,
-                subtotal // ✅ add per item total
+                stock: sizeDetail.stock,
+                subtotal
             };
-        });
+        }).filter(Boolean); // null വാല്യൂസ് ഒഴിവാക്കുന്നു
 
-        res.json({
-            items: formattedCart,
-            totalQuantity,
-            totalPrice,
-            totalItems: formattedCart.length
-        });
-
+        res.json({ items: formattedCart, totalQuantity, totalPrice, totalItems: formattedCart.length });
     } catch (error: any) {
         res.status(500).json({ message: error.message });
     }
@@ -382,16 +347,15 @@ export const getCart = async (req: Request, res: Response) => {
 export const updateCartQuantity = async (req: Request, res: Response) => {
     try {
         const { quantity } = req.body;
+        if (!quantity || quantity < 1) return res.status(400).json({ message: 'Invalid quantity' });
+
         const cartItem = await Cart.findOne({ _id: req.params.id, user: req.user!._id });
         if (!cartItem) return res.status(404).json({ message: 'Cart item not found' });
 
         const product = await Product.findById(cartItem.product);
-        const variant = (product?.variants as any)?.id(cartItem.variantId);
-        const sizeEntry = (variant?.sizes as any)?.id(cartItem.sizeId);
+        const sizeEntry = product?.variants.id(cartItem.variantId as any)?.sizes.id(cartItem.sizeId as any);
 
-        if (!sizeEntry || Number(quantity) > sizeEntry.stock) {
-            return res.status(400).json({ message: 'Insufficient stock' });
-        }
+        if (!sizeEntry || quantity > sizeEntry.stock) return res.status(400).json({ message: 'Insufficient stock' });
 
         cartItem.quantity = Number(quantity);
         await cartItem.save();
