@@ -179,10 +179,6 @@ interface ShippingRateResponse {
     courier_name: string;
 }
 
-/**
- * 1. DTDC (SHIPSY) BOOKING API
- * അഡ്മിൻ 'Shipped' സ്റ്റാറ്റസ് മാറ്റുമ്പോൾ ഈ ഫംഗ്ഷൻ ബാക്കെൻഡ് ഉള്ളിൽ നിന്ന് വിളിക്കും.
- */
 export const bookDTDCOrder = async (order: any) => {
     if (process.env.USE_MOCK_SHIPPING === 'true') {
         console.log("🚀 [MOCK MODE] Simulating DTDC Booking for Order:", order._id);
@@ -199,7 +195,7 @@ export const bookDTDCOrder = async (order: any) => {
             "consignment_type": "forward",
             "movement_type": "forward",
             "load_type": "NON-DOCUMENT",
-            "description": "Apparel and Accessories",
+            "description": "Clothing and Apparel",
             "customer_code": process.env.DTDC_CUST_CODE,
             "reference_number": order._id.toString(),
             "service_type_id": process.env.DTDC_SERVICE_TYPE || "B2C PRIORITY",
@@ -244,15 +240,12 @@ export const bookDTDCOrder = async (order: any) => {
 
         return response.data;
     } catch (error: any) {
-        console.error('DTDC Booking Error:', error.response?.data || error.message);
-        return null;
+        // VPS-ൽ എറർ ട്രാക്ക് ചെയ്യാൻ ലോഗ്സ് ഉപയോഗിക്കുന്നു
+        console.error('❌ DTDC API Error:', error.response?.data || error.message);
+        return { success: false, message: error.response?.data?.message || "API connection failed" };
     }
 };
 
-/**
- * 2. SHIPPING RATE CHECK
- * ചെക്കൗട്ട് പേജിൽ റേറ്റ് കാണിക്കാൻ.
- */
 export const getShippingRate = async (delivery_pincode: string, weight: number = 0.5): Promise<ShippingRateResponse | null> => {
     if (process.env.USE_MOCK_SHIPPING === 'true') {
         return { rate: 65, etd: "3-5 Days", courier_name: "DTDC Mock Express" };
@@ -266,6 +259,7 @@ export const getShippingRate = async (delivery_pincode: string, weight: number =
 
         if (response.data.status !== 'SUCCESS') return null;
 
+        // റേറ്റ് കാൽക്കുലേഷൻ (DTDC സ്ലോട്ട് അനുസരിച്ച് ഇത് അഡ്ജസ്റ്റ് ചെയ്യുക)
         const baseRate = 60;
         const calculatedRate = baseRate + (Math.ceil(weight / 0.5) * 15);
 
@@ -275,19 +269,21 @@ export const getShippingRate = async (delivery_pincode: string, weight: number =
             courier_name: "DTDC Express"
         };
     } catch (error) {
+        console.error('❌ Shipping Rate Fetch Failed');
         return null;
     }
 };
 
-/**
- * @route   POST /api/shipping/check
- */
 export const checkServiceability = async (req: Request, res: Response) => {
     const { delivery_pincode, weight } = req.body;
+    if (!delivery_pincode || delivery_pincode.length !== 6) {
+        return res.status(400).json({ message: "Invalid Pincode" });
+    }
     const result = await getShippingRate(delivery_pincode, weight);
-    if (!result) return res.status(404).json({ message: 'Service not available' });
+    if (!result) return res.status(404).json({ message: 'DTDC service not available for this pincode' });
     res.json({ success: true, ...result });
 };
+
 
 /**
  * 3. GET INTERNAL STATUS (For Scheduler)

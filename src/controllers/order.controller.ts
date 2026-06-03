@@ -955,7 +955,7 @@ import Order from '../models/Order';
 import Product from '../models/Product';
 import Cart from '../models/Cart';
 import Razorpay from 'razorpay';
-import { getShippingRate, bookDTDCOrder } from './shipping.controller'; // DTDC ഇന്റഗ്രേഷൻ
+import { getShippingRate, bookDTDCOrder } from './shipping.controller';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || '',
@@ -966,7 +966,6 @@ const razorpay = new Razorpay({
  * 🔥 HELPER FUNCTION: പെയ്‌മെന്റ് സക്സസ് ആയാൽ സ്റ്റോക്ക് കുറയ്ക്കാനും ഓർഡർ പെയ്ഡ് ആക്കാനും.
  */
 const finalizeOrderPayment = async (order: any, paymentId: string, signature: string) => {
-    // 1. ഡാറ്റാബേസിൽ ഈ ഓർഡർ ഇതുവരെ പെയ്ഡ് അല്ല എന്ന് ഉറപ്പുവരുത്തി മാത്രം അപ്‌ഡേറ്റ് ചെയ്യുന്നു
     const result = await Order.updateOne(
         { _id: order._id, isPaid: false },
         {
@@ -981,7 +980,6 @@ const finalizeOrderPayment = async (order: any, paymentId: string, signature: st
 
     if (result.modifiedCount === 0) return;
 
-    // 2. ATOMIC STOCK UPDATE (സ്റ്റോക്ക് കുറയ്ക്കുന്നു)
     for (const item of order.orderItems) {
         await Product.updateOne(
             { _id: item.product, "variants._id": item.variantId, "variants.sizes._id": item.sizeId },
@@ -1004,24 +1002,56 @@ export const createOrder = async (req: Request, res: Response) => {
             return res.status(400).json({ message: 'No order items found' });
         }
 
+        // 🔥 സുരക്ഷ: കാർട്ടിൽ നിന്നാണെങ്കിൽ ഒറിജിനൽ കാർട്ട് ഡാറ്റ എടുക്കുന്നു
+        let userCart: any[] = [];
+        if (fromCart) {
+            userCart = await Cart.find({ user: req.user!._id });
+            if (userCart.length === 0) return res.status(400).json({ message: 'Cart is empty' });
+        }
+
         const orderItems = [];
         let calculatedItemsPrice = 0;
         let totalWeight = 0;
 
         for (const item of itemsFromClient) {
-            const product = await Product.findById(item.product);
+            const product = await Product.findOne({ _id: item.product, isDeleted: false });
             if (!product) return res.status(404).json({ message: `Product not found` });
 
+            // 1. വേരിയന്റ് കണ്ടെത്തുന്നു (Type Casting as any to avoid .id error)
             const variant = (product.variants as any).id(item.variantId);
-            const sizeEntry = (variant?.sizes as any)?.id(item.sizeId);
 
-            if (!sizeEntry) return res.status(404).json({ message: `Size/Variant mismatch` });
+            // 2. വേരിയന്റ് ഉണ്ടോ എന്നും അത് ഡിലീറ്റ് ചെയ്തതാണോ എന്നും പരിശോധിക്കുന്നു
+            if (!variant || variant.isDeleted) {
+                return res.status(404).json({ message: `Variant not found for ${product.name}` });
+            }
+
+            // 3. സൈസ് കണ്ടെത്തുന്നു
+            const sizeEntry = (variant.sizes as any).id(item.sizeId);
+
+            if (!sizeEntry) {
+                return res.status(404).json({ message: `Size not found for ${product.name}` });
+            }
+
+            // 🔥 ഇപ്പോൾ variant, sizeEntry എന്നിവ null ആകില്ലെന്ന് TypeScript-ന് ഉറപ്പായി.
+            // അതുകൊണ്ട് റെഡ് ലൈൻ മാറിക്കിട്ടും.
+
+            // 4. കാർട്ട് ക്വാണ്ടിറ്റി മാനിപ്പുലേഷൻ ചെക്ക്
+            if (fromCart) {
+                const cartItem = userCart.find(c =>
+                    c.product.toString() === item.product.toString() &&
+                    c.variantId.toString() === item.variantId.toString() &&
+                    c.sizeId.toString() === item.sizeId.toString()
+                );
+                if (!cartItem || item.quantity > cartItem.quantity) {
+                    return res.status(400).json({ message: `Invalid quantity for ${product.name}` });
+                }
+            }
 
             if (sizeEntry.stock < item.quantity) {
                 return res.status(400).json({ message: `Insufficient stock for ${product.name}` });
             }
 
-            const orderItem = {
+            orderItems.push({
                 product: product._id,
                 variantId: variant._id,
                 sizeId: sizeEntry._id,
@@ -1030,16 +1060,15 @@ export const createOrder = async (req: Request, res: Response) => {
                 color: variant.color,
                 quantity: item.quantity,
                 image: variant.images?.[0] || product.mainImage,
-                price: sizeEntry.price // സുരക്ഷ: ബാക്കെൻഡ് പ്രൈസ് തന്നെ എടുക്കുന്നു
-            };
+                price: sizeEntry.price
+            });
 
-            orderItems.push(orderItem);
-            calculatedItemsPrice += orderItem.price * item.quantity;
+            calculatedItemsPrice += sizeEntry.price * item.quantity;
             totalWeight += (product.weight || 0.5) * item.quantity;
         }
 
         const shippingInfo = await getShippingRate(shippingAddress.postalCode, totalWeight);
-        if (!shippingInfo) return res.status(400).json({ message: 'Shipping not available for this pincode.' });
+        if (!shippingInfo) return res.status(400).json({ message: 'Shipping unavailable for this pincode.' });
 
         const finalTotalPrice = calculatedItemsPrice + shippingInfo.rate;
 
@@ -1054,7 +1083,6 @@ export const createOrder = async (req: Request, res: Response) => {
             orderItems,
             shippingAddress,
             paymentMethod: 'Razorpay',
-            taxPrice: 0,
             shippingPrice: shippingInfo.rate,
             totalPrice: finalTotalPrice,
             razorpayOrderId: rzpOrder.id,
@@ -1076,13 +1104,9 @@ export const verifyPayment = async (req: Request, res: Response) => {
 
         const order = await Order.findOne({ razorpayOrderId: razorpay_order_id });
         if (!order) return res.status(404).json({ message: 'Order not found' });
+        if (order.isPaid) return res.status(400).json({ message: 'Already paid' });
 
-        if (order.isPaid) {
-            return res.status(400).json({ success: false, message: 'Order already paid and processed' });
-        }
-
-        // ലൈവ് ആക്കുമ്പോൾ താഴെ പറയുന്ന സിഗ്നേച്ചർ ചെക്ക് അൺകമന്റ് ചെയ്യുക
-        /*
+        // 🔥 ലൈവ് ആക്കുമ്പോൾ ഈ ഭാഗം നിർബന്ധമാണ് (Uncommented for security)
         const body = razorpay_order_id + "|" + razorpay_payment_id;
         const expectedSignature = crypto
             .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
@@ -1092,11 +1116,9 @@ export const verifyPayment = async (req: Request, res: Response) => {
         if (expectedSignature !== razorpay_signature) {
             return res.status(400).json({ success: false, message: 'Invalid payment signature' });
         }
-        */
 
         await finalizeOrderPayment(order, razorpay_payment_id, razorpay_signature);
-
-        res.json({ success: true, message: 'Payment verified successfully', orderId: order._id });
+        res.json({ success: true, message: 'Order confirmed', orderId: order._id });
 
     } catch (error: any) {
         res.status(500).json({ message: error.message });
@@ -1108,11 +1130,10 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
     try {
         const secret = process.env.RAZORPAY_WEBHOOK_SECRET!;
         const signature = req.headers['x-razorpay-signature'] as string;
-
         const body = JSON.stringify(req.body);
-        const expectedSignature = crypto.createHmac('sha256', secret).update(body).digest('hex');
 
-        if (expectedSignature !== signature) return res.status(400).send('Invalid webhook signature');
+        const expectedSignature = crypto.createHmac('sha256', secret).update(body).digest('hex');
+        if (expectedSignature !== signature) return res.status(400).send('Invalid signature');
 
         const event = req.body.event;
         if (event === 'payment.captured' || event === 'order.paid') {
@@ -1136,10 +1157,8 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
         const order = await Order.findById(req.params.id);
         if (!order) return res.status(404).json({ message: 'Order not found' });
 
-        // 🔥 DTDC Automation: അഡ്മിൻ 'Shipped' എന്നാക്കുമ്പോൾ DTDC-യിൽ ഓർഡർ ബുക്ക് ചെയ്യുന്നു
         if (status === 'Shipped' && order.orderStatus !== 'Shipped' && order.isPaid) {
             const dtdcRes = await bookDTDCOrder(order);
-
             if (dtdcRes && dtdcRes.success) {
                 order.trackingId = dtdcRes.reference_number;
                 order.courierPartner = 'DTDC Express';
@@ -1157,7 +1176,6 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
             order.isDelivered = true;
             order.deliveredAt = new Date();
         }
-
         await order.save();
         res.json(order);
     } catch (error: any) {

@@ -3,6 +3,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface ICategory extends Document {
   name: string;
   slug: string;
+  isDeleted: boolean; // 🔥 ചേർത്തു
   createdAt: Date;
   updatedAt: Date;
 }
@@ -20,11 +21,14 @@ const categorySchema = new Schema<ICategory>(
       unique: true, 
       lowercase: true 
     },
+    isDeleted: { 
+      type: Boolean, 
+      default: false 
+    }, // 🔥 ചേർത്തു
   },
   { timestamps: true }
 );
 
-// Category-kum slug automatic aayi generate cheyyaam
 categorySchema.pre('validate', function (this: ICategory) {
   if (this.name && !this.slug) {
     this.slug = this.name

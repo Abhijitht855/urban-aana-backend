@@ -102,13 +102,7 @@ import { JwtPayload } from '../types/index';
  */
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      res.status(400).json({ errors: errors.array() });
-      return;
-    }
-
-    const { name, email, password } = req.body;
+    const { name, email, password } = req.body; // role ഇവിടെ എടുക്കുന്നില്ല (Security Fix)
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -116,29 +110,28 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const user = await User.create({ name, email, password });
+    // പുതിയ യൂസറെ ഉണ്ടാക്കുമ്പോൾ എപ്പോഴും role: 'user' ആയിരിക്കും
+    const user = await User.create({ 
+      name, 
+      email, 
+      password,
+      role: 'user' 
+    });
 
-    // Generate both tokens
     const { accessToken, refreshToken } = generateTokens({ 
       _id: user._id.toString(), 
       role: user.role 
     });
 
-    // Send Refresh Token via HTTP-only cookie
     sendRefreshTokenCookie(res, refreshToken);
 
     res.status(201).json({
       message: 'User registered successfully',
-      accessToken, // Only send access token in JSON
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
+      accessToken,
+      user: { id: user._id, name: user.name, email: user.email, role: user.role },
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 

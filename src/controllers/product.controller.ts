@@ -597,27 +597,44 @@ export const createProduct = async (req: Request, res: Response) => {
 // ─── GET OPERATIONS ──────────────────────────────────────────────────────────
 export const getProducts = async (req: Request, res: Response) => {
   try {
-    // 🔥 മാറ്റം: പണ്ടത്തെ പോലെ ലളിതമായി ഡാറ്റ ഫെച്ച് ചെയ്യുന്നു
-    const products = await Product.find()
+    const products = await Product.find({ isDeleted: false })
       .populate('category', 'name')
       .sort({ createdAt: -1 });
 
-    res.json(products);
+    const filteredProducts = products.map(product => {
+      // 🔥 മാറ്റം: 'as any' ചേർത്തു
+      const obj = product.toObject() as any; 
+      if (obj.variants) {
+        obj.variants = obj.variants.filter((v: any) => !v.isDeleted);
+      }
+      return obj;
+    });
+
+    res.json(filteredProducts);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
 };
-
 
 export const getProductById = async (req: Request, res: Response) => {
   try {
-    const product = await Product.findById(req.params.id).populate('category', 'name');
+    const product = await Product.findOne({ _id: req.params.id, isDeleted: false })
+      .populate('category', 'name');
+
     if (!product) return res.status(404).json({ message: 'Product not found' });
-    res.json(product);
+
+    // 🔥 മാറ്റം: 'as any' ചേർത്തു
+    const productObj = product.toObject() as any;
+    if (productObj.variants) {
+      productObj.variants = productObj.variants.filter((v: any) => !v.isDeleted);
+    }
+
+    res.json(productObj);
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
-};
+};;
+
 
 // ─── UPDATE PRODUCT (BASIC INFO ONLY) ────────────────────────────────────────
 export const updateProduct = async (req: Request, res: Response) => {
@@ -645,7 +662,7 @@ export const updateProduct = async (req: Request, res: Response) => {
     if (isFeatured !== undefined) {
       product.isFeatured = isFeatured === true || isFeatured === 'true';
     }
-    
+
     Object.assign(product, updateData);
     await product.save();
     res.json(product);
@@ -657,9 +674,16 @@ export const updateProduct = async (req: Request, res: Response) => {
 // ─── DELETE PRODUCT ──────────────────────────────────────────────────────────
 export const deleteProduct = async (req: Request, res: Response) => {
   try {
-    const product = await Product.findByIdAndDelete(req.params.id);
+    const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
-    res.json({ message: 'Product removed successfully' });
+
+    product.isDeleted = true;
+
+    // 🔥 Slug Conflict ഒഴിവാക്കാൻ ഡിലീറ്റ് ചെയ്യുമ്പോൾ സ്ലഗ് മാറ്റുന്നു
+    product.slug = `${product.slug}-deleted-${Date.now()}`;
+
+    await product.save();
+    res.json({ message: 'Product archived successfully' });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -674,6 +698,12 @@ export const addVariant = async (req: Request, res: Response) => {
     if (extraError) return res.status(400).json({ message: extraError });
 
     const { color, images, sizes } = req.body;
+
+    // 🔥 സുരക്ഷാ പരിശോധന: ഇമേജ് ലിസ്റ്റ് നിർബന്ധമാണ്
+    if (!images || !Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({ message: 'At least one image is required for a variant' });
+    }
+
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
@@ -692,7 +722,6 @@ export const addVariant = async (req: Request, res: Response) => {
 
 export const updateVariant = async (req: Request, res: Response) => {
   try {
-    // 'sizes' പാസ്സ് ചെയ്താൽ എറർ വരും
     const allowed = ['color', 'images'];
     const extraError = checkExtraFields(allowed, req.body);
     if (extraError) return res.status(400).json({ message: extraError });
@@ -702,11 +731,13 @@ export const updateVariant = async (req: Request, res: Response) => {
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
     const variant = product.variants.id(req.params.variantId as any);
-    if (!variant) return res.status(404).json({ message: 'Variant not found' });
+
+    // 🔥 മാറ്റം: ഡിലീറ്റ് ആയ വേരിയന്റ് അപ്‌ഡേറ്റ് ചെയ്യാൻ സമ്മതിക്കരുത്
+    if (!variant || variant.isDeleted) return res.status(404).json({ message: 'Active variant not found' });
 
     if (color && color.toLowerCase().trim() !== variant.color.toLowerCase().trim()) {
       const colorExists = product.variants.some(
-        v => v.color.toLowerCase().trim() === color.toLowerCase().trim()
+        v => !v.isDeleted && v.color.toLowerCase().trim() === color.toLowerCase().trim()
       );
       if (colorExists) return res.status(400).json({ message: 'Color name already exists' });
       variant.color = color;
@@ -726,9 +757,14 @@ export const deleteVariant = async (req: Request, res: Response) => {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    (product.variants as any).pull(req.params.variantId);
+    const variant = product.variants.id(req.params.variantId as any);
+    if (!variant) return res.status(404).json({ message: 'Variant not found' });
+
+    // 🔥 ഡിലീറ്റ് ചെയ്യുന്നതിന് പകരം സ്റ്റാറ്റസ് മാറ്റുന്നു
+    variant.isDeleted = true;
     await product.save();
-    res.json({ message: 'Variant removed successfully' });
+
+    res.json({ message: 'Variant archived successfully' });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
   }
@@ -739,7 +775,7 @@ export const deleteVariant = async (req: Request, res: Response) => {
 export const addSize = async (req: Request, res: Response) => {
   try {
     const { size, stock, price } = req.body;
-    
+
     // 🔥 വാലിഡേഷൻ
     if (price <= 0) return res.status(400).json({ message: 'Price must be greater than 0' });
     if (stock < 0) return res.status(400).json({ message: 'Stock cannot be negative' });

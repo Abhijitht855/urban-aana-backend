@@ -155,6 +155,7 @@ interface IVariant extends Types.Subdocument {
   color: string;
   images: string[];
   sizes: Types.DocumentArray<ISizeEntry>;
+  isDeleted: boolean;
 }
 
 export interface IProduct extends Document {
@@ -167,6 +168,7 @@ export interface IProduct extends Document {
   variants: Types.DocumentArray<IVariant>; // Changed to DocumentArray
   weight: number;
   isFeatured: boolean;
+  isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -185,6 +187,7 @@ const variantSchema = new Schema<IVariant>(
     color: { type: String, required: true, trim: true },
     images: { type: [String], required: true },
     sizes: [sizeEntrySchema],
+    isDeleted: { type: Boolean, default: false },
   },
   { _id: true }
 );
@@ -209,6 +212,7 @@ const productSchema = new Schema<IProduct>(
       }
     },
     isFeatured: { type: Boolean, default: false },
+    isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
