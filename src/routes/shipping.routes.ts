@@ -1,9 +1,10 @@
 import express from 'express';
 import { 
     checkServiceability, 
-    getLiveTrackingHistory 
+    getLiveTrackingHistory, 
+    getShippingLabel
 } from '../controllers/shipping.controller';
-import { protect } from '../middlewares/auth.middleware';
+import { adminOnly, protect } from '../middlewares/auth.middleware';
 
 const router = express.Router();
 
@@ -18,5 +19,7 @@ router.post('/check', protect, checkServiceability);
  * @desc    യൂസർക്ക് തന്റെ ഓർഡർ എവിടെ എത്തിയെന്ന് ലൈവ് ആയി കാണാൻ
  */
 router.get('/track/:trackingId', protect, getLiveTrackingHistory);
+
+router.get('/label/:referenceNumber', protect, adminOnly, getShippingLabel);
 
 export default router;

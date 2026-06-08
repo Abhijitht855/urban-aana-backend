@@ -219,6 +219,7 @@ export interface IOrder extends Document {
     isPaid: boolean;
     paidAt?: Date;
     isDelivered: boolean;
+    shippedAt?: Date;
     deliveredAt?: Date;
     razorpayOrderId?: string;
     razorpayPaymentId?: string;
@@ -226,6 +227,7 @@ export interface IOrder extends Document {
     courierPartner?: string;
     trackingId?: string;
     orderStatus: 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled';
+    totalWeight: number;
     fromCart: boolean;
 }
 
@@ -269,8 +271,9 @@ const orderSchema = new Schema<IOrder>(
         isPaid: { type: Boolean, required: true, default: false },
         paidAt: { type: Date },
         isDelivered: { type: Boolean, required: true, default: false },
+        shippedAt: { type: Date },
         deliveredAt: { type: Date },
-        
+        totalWeight: { type: Number, default: 0.5 },
         razorpayOrderId: { 
             type: String, 
             unique: true, // ഇതിലൂടെ Mongoose ഒരു ഇൻഡക്സ് ഓട്ടോമാറ്റിക് ആയി ഉണ്ടാക്കും

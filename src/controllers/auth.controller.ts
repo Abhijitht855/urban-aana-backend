@@ -260,3 +260,79 @@ export const getAllUsers = async (req: Request, res: Response): Promise<void> =>
     res.status(500).json({ message: 'Server error', error })
   }
 }
+
+// 1. ADD NEW ADDRESS
+export const addAddress = async (req: Request, res: Response) => {
+    try {
+        const user = await User.findById(req.user!._id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        // ആദ്യത്തെ അഡ്രസ്സ് ആണെങ്കിൽ അല്ലെങ്കിൽ നിലവിൽ default ഒന്നും ഇല്ലെങ്കിൽ ഇതിനെ default ആക്കുന്നു
+        const hasDefault = user.addresses.some(addr => addr.isDefault);
+        const newAddress = { ...req.body, isDefault: !hasDefault };
+
+        user.addresses.push(newAddress as any);
+        await user.save();
+        res.status(201).json(user.addresses);
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// 2. SET DEFAULT ADDRESS
+export const setDefaultAddress = async (req: Request, res: Response) => {
+    try {
+        const user = await User.findById(req.user!._id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        const { addressId } = req.params;
+
+        // 🔥 Fix: 'as any' ഉപയോഗിക്കുന്നത് വഴി TypeScript error ഒഴിവാക്കി
+        const addressToSet = (user.addresses as any).id(addressId);
+        
+        if (!addressToSet) {
+            return res.status(404).json({ message: 'Address not found or already deleted' });
+        }
+
+        user.addresses.forEach((addr: any) => {
+            addr.isDefault = addr._id.toString() === addressId;
+        });
+
+        await user.save();
+        res.json(user.addresses);
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// 3. DELETE ADDRESS
+export const deleteAddress = async (req: Request, res: Response) => {
+    try {
+        const user = await User.findById(req.user!._id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        const { addressId } = req.params;
+
+        // 🔥 Fix: 'as any' ഉപയോഗിക്കുന്നത് വഴി TypeScript error ഒഴിവാക്കി
+        const addressToDelete = (user.addresses as any).id(addressId);
+        
+        if (!addressToDelete) {
+            return res.status(404).json({ message: 'Address already deleted' });
+        }
+
+        const wasDefault = addressToDelete.isDefault;
+
+        // അഡ്രസ്സ് റിമൂവ് ചെയ്യുന്നു
+        (user.addresses as any).pull(addressId);
+
+        // ഡിലീറ്റ് ചെയ്തത് default ആണെങ്കിൽ അടുത്തതിനെ default ആക്കുന്നു
+        if (wasDefault && user.addresses.length > 0) {
+            user.addresses[0].isDefault = true;
+        }
+
+        await user.save();
+        res.json({ message: 'Address removed successfully', addresses: user.addresses });
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
+};

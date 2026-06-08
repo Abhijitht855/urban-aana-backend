@@ -29,7 +29,10 @@ import {
   getMe, 
   refresh, 
   logout, 
-  getAllUsers
+  getAllUsers,
+  addAddress,
+  setDefaultAddress,
+  deleteAddress
 } from '../controllers/auth.controller';
 import { adminOnly, protect } from '../middlewares/auth.middleware';
 import { body } from 'express-validator';
@@ -55,5 +58,9 @@ router.post('/refresh-token', refresh);
 router.post('/logout', logout);
 router.get('/me', protect, getMe);
 router.get('/users', protect, adminOnly, getAllUsers); 
+
+router.post('/addresses', protect, addAddress);
+router.patch('/addresses/:addressId/default', protect, setDefaultAddress);
+router.delete('/addresses/:addressId', protect, deleteAddress);
 
 export default router;

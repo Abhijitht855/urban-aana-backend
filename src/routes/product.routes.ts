@@ -47,7 +47,8 @@ import {
   updateVariant,
   deleteVariant,
   updateSize,
-  addSize
+  addSize,
+  globalSearch
 } from '../controllers/product.controller';
 import { adminOnly, protect } from '../middlewares/auth.middleware';
 
@@ -56,6 +57,7 @@ const router = Router();
 // Public Routes
 router.get('/', getProducts);
 router.get('/:id', getProductById);
+router.get('/search/global', globalSearch);
 
 // Admin Routes - Product Basic
 router.post('/', protect, adminOnly, createProduct);

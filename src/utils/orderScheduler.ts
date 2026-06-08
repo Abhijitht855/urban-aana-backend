@@ -2,47 +2,50 @@ import cron from 'node-cron';
 import Order from '../models/Order';
 import { getDTDCStatus } from '../controllers/shipping.controller';
 
+// DTDC status strings — Deepak confirm ചെയ്യുമ്പോൾ add ചെയ്യാം
+const DELIVERED_STATUSES = ['delivered', 'dlvd', 'delivery done', 'shipment delivered'];
+
 export const startOrderScheduler = () => {
     cron.schedule('0 */6 * * *', async () => {
-        const now = new Date().toISOString();
-        console.log(`🚚 [${now}] Scheduler: Checking delivery status for shipped orders...`);
+        console.log(`🚚 [${new Date().toLocaleString()}] Scheduler running...`);
 
         try {
-            // ലോഡ് കുറയ്ക്കാനും കൃത്യതയ്ക്കും വേണ്ടി: 
-            // ഷിപ്പ് ചെയ്ത് കുറഞ്ഞത് 24 മണിക്കൂർ കഴിഞ്ഞ ഓർഡറുകൾ മാത്രം നോക്കുന്നു.
+            // ✅ Fix: shippedAt use ചെയ്യുന്നു, updatedAt അല്ല
             const checkThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-            // 'Shipped' ആയതും 24 മണിക്കൂർ കഴിഞ്ഞതുമായ ഓർഡറുകൾ മാത്രം എടുക്കുന്നു.
-            // ആവശ്യമുള്ള ഫീൽഡുകൾ മാത്രം സെലക്ട് ചെയ്യുന്നു (.select).
             const shippedOrders = await Order.find({
                 orderStatus: 'Shipped',
-                updatedAt: { $lte: checkThreshold }
-            }).select('trackingId orderStatus');
+                trackingId: { $exists: true, $ne: '' },
+                shippedAt: { $lte: checkThreshold }  // 24hr+ മുൻപ് shipped ആയവ
+            }).select('trackingId orderStatus _id');
 
-            if (shippedOrders.length === 0) {
-                console.log("ℹ️ [Scheduler]: No eligible orders found for checking.");
-                return;
-            }
+            console.log(`📦 Found ${shippedOrders.length} orders to check`);
+            if (shippedOrders.length === 0) return;
 
             for (const order of shippedOrders) {
-                if (!order.trackingId) continue;
+                const rawStatus = await getDTDCStatus(order.trackingId!);
+                
+                if (!rawStatus) continue;
 
-                // 1. DTDC (Shipsy) എപിഐ വഴി നിലവിലെ സ്റ്റാറ്റസ് ചോദിക്കുന്നു
-                const currentStatus = await getDTDCStatus(order.trackingId);
+                console.log(`Order ${order._id} — DTDC Status: "${rawStatus}"`);
 
-                // 2. കൊറിയർ കമ്പനി 'Delivered' എന്ന് പറഞ്ഞാൽ നമ്മുടെ ഡാറ്റാബേസിലും അപ്ഡേറ്റ് ചെയ്യുന്നു.
-                // വാല്യൂ കേസ് ഇൻസെൻസിറ്റീവ് (Case-insensitive) ആയി ചെക്ക് ചെയ്യുന്നു.
-                if (currentStatus?.toUpperCase() === 'DELIVERED') {
-                    order.orderStatus = 'Delivered';
-                    order.isDelivered = true;
-                    order.deliveredAt = new Date();
-                    
-                    await order.save();
-                    console.log(`✅ [Scheduler]: Order ${order._id} successfully marked as Delivered.`);
+                // ✅ Fix: multiple possible DTDC status strings handle ചെയ്യുന്നു
+                if (DELIVERED_STATUSES.includes(rawStatus.toLowerCase())) {
+                    await Order.updateOne(
+                        { _id: order._id },
+                        {
+                            $set: {
+                                orderStatus: 'Delivered',
+                                isDelivered: true,
+                                deliveredAt: new Date()
+                            }
+                        }
+                    );
+                    console.log(`✅ Order ${order._id} marked as Delivered`);
                 }
             }
-        } catch (error) {
-            console.error("❌ [Scheduler Error]: Failed to process order status updates.", error);
+        } catch (error: any) {
+            console.error('❌ Scheduler Error:', error.message);
         }
     });
 };
