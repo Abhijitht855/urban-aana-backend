@@ -1,301 +1,3 @@
-// import { Request, Response } from 'express';
-// import axios from 'axios';
-
-// interface ShippingRateResponse {
-//     rate: number;
-//     etd: string;
-//     courier_name: string;
-// }
-
-// /**
-//  * 1. DTDC (SHIPSY) BOOKING API
-//  * Admin "Shipped" status set ചെയ്യുമ്പോൾ ഈ function call ആകും.
-//  * API Playground Confirmed: POST https://app.shipsy.in/api/customer/integration/consignment/upload/softdata/v2
-//  * Header: api-key: <DTDC_API_KEY>
-//  * Success Response: { success: true, reference_number: "E12345678", courier_partner: "..." }
-//  */
-// export const bookDTDCOrder = async (order: any) => {
-//     // Mock Mode
-//     if (process.env.USE_MOCK_SHIPPING === 'true') {
-//         console.log('🚀 [MOCK] Simulating DTDC Booking for Order:', order._id);
-//         return {
-//             success: true,
-//             reference_number: 'MOCK-DTDC-' + Math.floor(Math.random() * 1000000),
-//             courier_partner: 'DTDC Mock'
-//         };
-//     }
-
-//     try {
-//         const payload = {
-//             action_type: 'single_pickup',
-//             consignment_type: 'forward',
-//             movement_type: 'forward',
-//             load_type: 'NON-DOCUMENT',
-//             description: 'Clothing Apparel - ' + (order.orderItems?.[0]?.name || 'Urban Aana'),
-//             customer_code: process.env.DTDC_CUST_CODE,           // OO3964
-//             reference_number: order._id.toString(),
-//             service_type_id: process.env.DTDC_SERVICE_TYPE_ID,   // portal-ൽ നിന്ന് confirm ചെയ്യണം
-//             dimension_unit: 'cm',
-//             length: '20',
-//             width: '15',
-//             height: '5',
-//             weight_unit: 'kg',
-//             weight: String(order.totalWeight || 0.5),
-//             declared_value: order.totalPrice,
-//             num_pieces: 1,
-//             origin_details: {
-//                 name: process.env.ORIGIN_NAME,
-//                 phone: process.env.ORIGIN_PHONE,
-//                 pincode: process.env.ORIGIN_PINCODE,
-//                 address_line_1: process.env.ORIGIN_ADDRESS,
-//                 city: process.env.ORIGIN_CITY,
-//                 state: process.env.ORIGIN_STATE,
-//                 country: 'India'
-//             },
-//             destination_details: {
-//                 name: order.shippingAddress.firstName + ' ' + order.shippingAddress.lastName,
-//                 phone: order.shippingAddress.phone,
-//                 pincode: order.shippingAddress.postalCode,
-//                 address_line_1: order.shippingAddress.address,
-//                 city: order.shippingAddress.city,
-//                 state: order.shippingAddress.state || 'Kerala',
-//                 country: 'India'
-//             },
-//             pieces_detail: [{
-//                 description: 'Apparel',
-//                 declared_value: String(order.totalPrice),
-//                 weight: String(order.totalWeight || 0.5),
-//                 height: '5',
-//                 length: '20',
-//                 width: '15',
-//                 weight_unit: 'kg',
-//                 dimension_unit: 'cm'
-//             }]
-//         };
-
-//         console.log('📦 DTDC Booking Payload:', JSON.stringify(payload, null, 2));
-
-//         const response = await axios.post(
-//             'https://app.shipsy.in/api/customer/integration/consignment/upload/softdata/v2',
-//             payload,
-//             {
-//                 headers: {
-//                     'api-key': process.env.DTDC_API_KEY,
-//                     'Content-Type': 'application/json'
-//                 }
-//             }
-//         );
-
-//         console.log('✅ DTDC Booking Response:', JSON.stringify(response.data, null, 2));
-
-//         /**
-//          * API Playground Confirmed Response Structure:
-//          * { success: true, reference_number: "E12345678", courier_partner: "..." }
-//          * NOTE: response.data.reference_number — NO extra .data layer!
-//          */
-//         if (response.data?.success === true && response.data?.reference_number) {
-//             return {
-//                 success: true,
-//                 reference_number: response.data.reference_number,
-//                 courier_partner: response.data.courier_partner || 'DTDC Express'
-//             };
-//         }
-
-//         // Shipsy success:false ആയി return ചെയ്തു
-//         return {
-//             success: false,
-//             message: response.data?.message || response.data?.error?.message || 'DTDC booking failed — check portal logs'
-//         };
-
-//     } catch (error: any) {
-//         const errMsg = error.response?.data?.error?.message
-//             || error.response?.data?.message
-//             || error.message
-//             || 'Network error';
-
-//         console.error('❌ DTDC Booking Error:', error.response?.data || error.message);
-
-//         return {
-//             success: false,
-//             message: errMsg
-//         };
-//     }
-// };
-
-// /**
-//  * 2. SHIPPING RATE CHECK (Serviceability)
-//  * ഇപ്പോൾ mock mode-ൽ മാത്രം. Live serviceability endpoint Deepak confirm ചെയ്യട്ടെ.
-//  * Portal-ൽ Information Centre → Pincode Serviceability UI ഉണ്ട്, but API endpoint unclear.
-//  */
-// export const getShippingRate = async (
-//     delivery_pincode: string,
-//     weight: number = 0.5
-// ): Promise<ShippingRateResponse | null> => {
-//     // Mock Mode
-//     if (process.env.USE_MOCK_SHIPPING === 'true') {
-//         return { rate: 65, etd: '3-5 Days', courier_name: 'DTDC Mock Express' };
-//     }
-
-//     try {
-//         // Shipsy Serviceability endpoint (Deepak confirm ചെയ്താൽ uncomment ചെയ്യുക)
-//         const response = await axios.get(
-//             `https://app.shipsy.in/api/customer/integration/consignment/pincode/serviceability?pincode=${delivery_pincode}`,
-//             {
-//                 headers: {
-//                     'api-key': process.env.DTDC_API_KEY || '',
-//                     'Content-Type': 'application/json'
-//                 }
-//             }
-//         );
-
-//         console.log('📦 DTDC Serviceability Response:', response.data);
-
-//         if (!response.data || response.data.success !== true) {
-//             return null;
-//         }
-
-//         // Rate calculation (DTDC agreement rate)
-//         const baseRate = Number(process.env.SHIPPING_BASE_RATE) || 60;
-//         const perHalfKg = Number(process.env.SHIPPING_PER_500G) || 15;
-//         const calculatedRate = baseRate + (Math.ceil(weight / 0.5) * perHalfKg);
-
-//         return {
-//             rate: calculatedRate,
-//             etd: '3-5 Days',
-//             courier_name: 'DTDC Express'
-//         };
-//     } catch (error: any) {
-//         console.error('❌ DTDC Serviceability Error:', error.response?.data || error.message);
-//         return null;
-//     }
-// };
-
-// /**
-//  * 3. DTDC TRACKING (Internal — Scheduler ഉപയോഗിക്കും)
-//  * Confirmed by Deepak: POST https://blktracksvc.dtdc.com/dtdc-api/rest/JSONCnTrk/getTrackDetails
-//  * Header: x-access-token: OO3964_trk_json:...
-//  */
-// export const getDTDCStatus = async (referenceNumber: string): Promise<string | null> => {
-//     if (process.env.USE_MOCK_SHIPPING === 'true') return 'DELIVERED';
-
-//     try {
-//         const response = await axios.post(
-//             'https://blktracksvc.dtdc.com/dtdc-api/rest/JSONCnTrk/getTrackDetails',
-//             {
-//                 trkType: 'cnno',
-//                 strcnno: referenceNumber,
-//                 addtnlDtl: 'Y'
-//             },
-//             {
-//                 headers: {
-//                     'Content-Type': 'application/json',
-//                     'x-access-token': process.env.DTDC_TRACKING_TOKEN
-//                 }
-//             }
-//         );
-
-//         if (response.data?.status === 'SUCCESS' && response.data?.trackDetails?.[0]) {
-//             return response.data.trackDetails[0].status;
-//         }
-//         return null;
-//     } catch (error) {
-//         return null;
-//     }
-// };
-
-
-// /**
-//  * 4. SHIPPING LABEL (FIXED PDF RESPONSE)
-//  */
-// export const getShippingLabel = async (req: Request, res: Response) => {
-//     const { referenceNumber } = req.params;
-
-//     if (process.env.USE_MOCK_SHIPPING === 'true') {
-//         // 🔥 Fix: ഒരു Minimal Valid PDF Buffer നൽകുന്നു
-//         const minimalValidPdf = Buffer.from(
-//             '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj\n3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R/Resources<<>>>>endobj\nxref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n0000000052 00000 n\n0000000101 00000 n\ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n178\n%%EOF'
-//         );
-//         res.setHeader('Content-Type', 'application/pdf');
-//         res.setHeader('Content-Disposition', `attachment; filename="mock-label.pdf"`);
-//         return res.send(minimalValidPdf);
-//     }
-
-//     try {
-//         const response = await axios.get(
-//             'https://app.shipsy.in/api/customer/integration/consignment/shippinglabel/stream',
-//             {
-//                 params: { reference_number: referenceNumber },
-//                 headers: { 'api-key': process.env.DTDC_API_KEY },
-//                 responseType: 'stream'
-//             }
-//         );
-
-//         res.setHeader('Content-Type', 'application/pdf');
-//         res.setHeader('Content-Disposition', `attachment; filename="dtdc-label-${referenceNumber}.pdf"`);
-//         response.data.pipe(res);
-//     } catch (error: any) {
-//         res.status(500).json({ message: 'Failed to generate label' });
-//     }
-// };
-
-// /**
-//  * 4. LIVE TRACKING (Customer-facing route)
-//  * Shipsy tracking also available: GET https://app.shipsy.in/api/customer/integration/consignment/track?reference_number=...
-//  */
-// export const getLiveTrackingHistory = async (req: Request, res: Response) => {
-//     const { trackingId } = req.params;
-
-//     if (process.env.USE_MOCK_SHIPPING === 'true') {
-//         return res.json({
-//             success: true,
-//             trackingData: [
-//                 { status: 'Booked', status_location: 'Warehouse', status_date: '2024-06-01' },
-//                 { status: 'In Transit', status_location: 'Trivandrum Hub', status_date: '2024-06-02' },
-//                 { status: 'Delivered', status_location: 'Destination', status_date: '2024-06-04' }
-//             ]
-//         });
-//     }
-
-//     try {
-//         // Primary: DTDC Tracking API (Deepak confirmed)
-//         const response = await axios.post(
-//             'https://blktracksvc.dtdc.com/dtdc-api/rest/JSONCnTrk/getTrackDetails',
-//             {
-//                 trkType: 'cnno',
-//                 strcnno: trackingId,
-//                 addtnlDtl: 'Y'
-//             },
-//             {
-//                 headers: {
-//                     'Content-Type': 'application/json',
-//                     'x-access-token': process.env.DTDC_TRACKING_TOKEN
-//                 }
-//             }
-//         );
-
-//         if (response.data?.status === 'SUCCESS') {
-//             return res.json({
-//                 success: true,
-//                 currentStatus: response.data.trackDetails?.[0]?.status,
-//                 trackingData: response.data.trackDetails
-//             });
-//         }
-
-//         res.status(404).json({ message: 'Tracking details not found' });
-//     } catch (error) {
-//         res.status(500).json({ message: 'Failed to fetch live tracking' });
-//     }
-// };
-
-// /**
-//  * 5. SERVICEABILITY CHECK (Route Handler)
-//  */
-// export const checkServiceability = async (req: Request, res: Response) => {
-//     const { delivery_pincode, weight } = req.body;
-//     const result = await getShippingRate(delivery_pincode, weight);
-//     if (!result) return res.status(404).json({ message: 'DTDC service not available for this pincode' });
-//     res.json({ success: true, ...result });
-// };
 import { Request, Response } from 'express';
 import axios from 'axios';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
@@ -308,11 +10,6 @@ interface ShippingRateResponse {
 
 // ─────────────────────────────────────────────
 // 1. DTDC BOOKING API
-// Confirmed by Deepak (June 8):
-// POST https://dtdcapi.shipsy.io/api/customer/integration/consignment/softdata
-// Payload: { consignments: [ {...} ] }  ← array wrapper!
-// reference_number: ""  ← DTDC auto-assign
-// customer_reference_number: order._id  ← our order ID
 // ─────────────────────────────────────────────
 export const bookDTDCOrder = async (order: any) => {
 
@@ -421,7 +118,6 @@ export const bookDTDCOrder = async (order: any) => {
 
 // ─────────────────────────────────────────────
 // 2. SERVICEABILITY & RATE CHECK
-// Confirmed by Deepak: POST https://smarttrack-ctbsplus.dtdc.com/ratecalapi/PincodeApiCall
 // ─────────────────────────────────────────────
 export const getShippingRate = async (
     delivery_pincode: string,
@@ -477,7 +173,6 @@ export const getShippingRate = async (
 
 // ─────────────────────────────────────────────
 // 3. SHIPPING LABEL DOWNLOAD
-// Confirmed by Deepak: GET https://dtdcapi.shipsy.io/.../shippinglabel/stream
 // ─────────────────────────────────────────────
 export const getShippingLabel = async (req: Request, res: Response) => {
     const referenceNumber = String(req.params.referenceNumber);
@@ -556,30 +251,21 @@ export const getShippingLabel = async (req: Request, res: Response) => {
 };
 
 // ─────────────────────────────────────────────
-// 4. DTDC TRACKING STATUS (Scheduler use ചെയ്യും)
+// 4. DTDC TRACKING STATUS
 // ─────────────────────────────────────────────
 export const getDTDCStatus = async (referenceNumber: string): Promise<string | null> => {
     if (process.env.USE_MOCK_SHIPPING?.trim() === 'true') return 'DELIVERED';
-
     try {
         const response = await axios.post(
             'https://blktracksvc.dtdc.com/dtdc-api/rest/JSONCnTrk/getTrackDetails',
             { trkType: 'cnno', strcnno: referenceNumber, addtnlDtl: 'Y' },
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-access-token': process.env.DTDC_TRACKING_TOKEN
-                }
-            }
+            { headers: { 'Content-Type': 'application/json', 'x-access-token': process.env.DTDC_TRACKING_TOKEN } }
         );
-
         if (response.data?.status === 'SUCCESS' && response.data?.trackDetails?.[0]) {
-            return response.data.trackDetails[0].status;
+            return response.data.trackDetails[response.data.trackDetails.length - 1].strAction;
         }
         return null;
-    } catch (error) {
-        return null;
-    }
+    } catch (error) { return null; }
 };
 
 // ─────────────────────────────────────────────

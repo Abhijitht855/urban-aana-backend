@@ -9,7 +9,7 @@ router.post(
   '/',
   protect,
   adminOnly,
-  upload.array('files', 10), // max 10 files ഒരേ സമയം
+  upload.array('files', 10),
   uploadFiles
 );
 

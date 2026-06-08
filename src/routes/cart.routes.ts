@@ -9,7 +9,6 @@ import { protect } from '../middlewares/auth.middleware';
 
 const router = Router();
 
-// എല്ലാ കാർട്ട് റൂട്ടുകൾക്കും Auth പ്രൊട്ടക്ഷൻ നൽകുന്നു
 router.use(protect);
 
 router.post('/', addToCart);

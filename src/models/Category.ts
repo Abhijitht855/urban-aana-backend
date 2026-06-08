@@ -3,7 +3,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface ICategory extends Document {
   name: string;
   slug: string;
-  isDeleted: boolean; // 🔥 ചേർത്തു
+  isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,7 +24,7 @@ const categorySchema = new Schema<ICategory>(
     isDeleted: { 
       type: Boolean, 
       default: false 
-    }, // 🔥 ചേർത്തു
+    }, 
   },
   { timestamps: true }
 );

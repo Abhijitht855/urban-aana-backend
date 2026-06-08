@@ -15,7 +15,7 @@ const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: async (req, file) => {
     return {
-      folder: 'urban-aana/products', // Cloudinary-il create aavunna folder name
+      folder: 'urban-aana/products',
       allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
       public_id: `${Date.now()}-${file.originalname.split('.')[0]}`,
     };

@@ -12,8 +12,6 @@ export const uploadFiles = async (req: Request, res: Response) => {
       return;
     }
 
-    // Cloudinary multer-storage-cloudinary use ചെയ്യുന്നതിനാൽ
-    // upload ആയ ശേഷം file.path = cloudinary URL ആകും
     const urls = files.map((file) => ({
       url: file.path,
       originalName: file.originalname,

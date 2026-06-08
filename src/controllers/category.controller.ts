@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import Category from '../models/Category';
-import Product from '../models/Product'; // 🔥 പ്രൊഡക്റ്റ് ഉണ്ടോ എന്ന് നോക്കാൻ
+import Product from '../models/Product'; 
 
 const checkExtraFields = (allowedFields: string[], body: any): string | null => {
   const extraFields = Object.keys(body).filter(key => !allowedFields.includes(key));
@@ -17,7 +17,6 @@ export const createCategory = async (req: Request, res: Response) => {
 
     const { name } = req.body;
 
-    // Case-insensitive check (ഉദാ: Shoes ഉം shoes ഉം ഒന്നായി കാണുന്നു)
     const categoryExists = await Category.findOne({ 
       name: { $regex: new RegExp(`^${name}$`, 'i') },
       isDeleted: false 
@@ -37,7 +36,6 @@ export const createCategory = async (req: Request, res: Response) => {
 // ─── GET CATEGORIES ──────────────────────────────────────────────────────────
 export const getCategories = async (req: Request, res: Response) => {
   try {
-    // ഡിലീറ്റ് ചെയ്യാത്തവ മാത്രം കാണിക്കുന്നു
     const categories = await Category.find({ isDeleted: false }).sort({ name: 1 });
     res.json(categories);
   } catch (error: any) {
@@ -55,7 +53,6 @@ export const deleteCategory = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'Category not found' });
     }
 
-    // 🔥 Cascade Protection: ഈ കാറ്റഗറിയിൽ പ്രൊഡക്റ്റുകൾ ഉണ്ടോ എന്ന് നോക്കുന്നു
     const productCount = await Product.countDocuments({ category: id, isDeleted: false });
     if (productCount > 0) {
       return res.status(400).json({ 
@@ -63,9 +60,8 @@ export const deleteCategory = async (req: Request, res: Response) => {
       });
     }
 
-    // സോഫ്റ്റ് ഡിലീറ്റ്
     category.isDeleted = true;
-    category.slug = `${category.slug}-deleted-${Date.now()}`; // സ്ലഗ് ഫ്രീയാക്കുന്നു
+    category.slug = `${category.slug}-deleted-${Date.now()}`;
     
     await category.save();
     res.json({ message: 'Category archived successfully' });

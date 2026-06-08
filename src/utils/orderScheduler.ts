@@ -2,35 +2,52 @@ import cron from 'node-cron';
 import Order from '../models/Order';
 import { getDTDCStatus } from '../controllers/shipping.controller';
 
-// DTDC status strings — Deepak confirm ചെയ്യുമ്പോൾ add ചെയ്യാം
-const DELIVERED_STATUSES = ['delivered', 'dlvd', 'delivery done', 'shipment delivered'];
+
+const DELIVERED_STATUSES = [
+    'delivered', 
+    'dlvd', 
+    'delivery done', 
+    'shipment delivered', 
+    'successfully delivered', 
+    'recipient received'
+];
 
 export const startOrderScheduler = () => {
     cron.schedule('0 */6 * * *', async () => {
-        console.log(`🚚 [${new Date().toLocaleString()}] Scheduler running...`);
+        const timestamp = new Date().toLocaleString('en-IN');
+        console.log(`🚚 [${timestamp}] Scheduler: Starting delivery status check...`);
 
         try {
-            // ✅ Fix: shippedAt use ചെയ്യുന്നു, updatedAt അല്ല
             const checkThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
             const shippedOrders = await Order.find({
                 orderStatus: 'Shipped',
+                isPaid: true,
                 trackingId: { $exists: true, $ne: '' },
-                shippedAt: { $lte: checkThreshold }  // 24hr+ മുൻപ് shipped ആയവ
+                shippedAt: { $lte: checkThreshold } 
             }).select('trackingId orderStatus _id');
 
-            console.log(`📦 Found ${shippedOrders.length} orders to check`);
-            if (shippedOrders.length === 0) return;
+            if (shippedOrders.length === 0) {
+                console.log("ℹ️ [Scheduler]: No eligible orders for checking.");
+                return;
+            }
+
+            console.log(`📦 [Scheduler]: Checking ${shippedOrders.length} shipped orders.`);
 
             for (const order of shippedOrders) {
-                const rawStatus = await getDTDCStatus(order.trackingId!);
+                if (!order.trackingId) continue;
+
                 
-                if (!rawStatus) continue;
+                const rawStatus = await getDTDCStatus(order.trackingId);
+                
+                if (!rawStatus) {
+                    console.log(`⚠️ [Scheduler]: Could not fetch status for Order ${order._id}`);
+                    continue;
+                }
 
-                console.log(`Order ${order._id} — DTDC Status: "${rawStatus}"`);
+                console.log(`🔍 Order ${order._id} -> Current DTDC Status: "${rawStatus}"`);
 
-                // ✅ Fix: multiple possible DTDC status strings handle ചെയ്യുന്നു
-                if (DELIVERED_STATUSES.includes(rawStatus.toLowerCase())) {
+                if (DELIVERED_STATUSES.includes(rawStatus.toLowerCase().trim())) {
                     await Order.updateOne(
                         { _id: order._id },
                         {
@@ -41,11 +58,13 @@ export const startOrderScheduler = () => {
                             }
                         }
                     );
-                    console.log(`✅ Order ${order._id} marked as Delivered`);
+                    console.log(`✅ [Scheduler]: Order ${order._id} marked as DELIVERED in database.`);
                 }
             }
         } catch (error: any) {
-            console.error('❌ Scheduler Error:', error.message);
+            console.error("❌ [Scheduler Error]:", error.message);
         }
     });
+
+    console.log("🛠️  Order Tracking Scheduler initialized and ready.");
 };

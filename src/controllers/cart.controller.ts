@@ -8,12 +8,10 @@ export const addToCart = async (req: Request, res: Response) => {
         const { productId, variantId, sizeId, quantity } = req.body;
         if (!quantity || quantity < 1) return res.status(400).json({ message: 'Quantity must be at least 1' });
 
-        // 🔥 മാറ്റം: ഡിലീറ്റ് ചെയ്യാത്ത പ്രൊഡക്റ്റ് ആണോ എന്ന് മാത്രം നോക്കുന്നു
         const product = await Product.findOne({ _id: productId, isDeleted: false });
         if (!product) return res.status(404).json({ message: 'Product not found or unavailable' });
 
         const variant = product.variants.id(variantId);
-        // 🔥 മാറ്റം: ഡിലീറ്റ് ആയ വേരിയന്റ് ആണോ എന്ന് നോക്കുന്നു
         if (!variant || variant.isDeleted) return res.status(400).json({ message: 'Selected variant is unavailable' });
 
         const sizeEntry = variant.sizes.id(sizeId);
@@ -47,12 +45,10 @@ export const getCart = async (req: Request, res: Response) => {
         let totalQuantity = 0;
 
         const formattedCart = cartItems.map((item: any) => {
-            // 🔥 മാറ്റം: പ്രൊഡക്റ്റ് ഡിലീറ്റ് ചെയ്യപ്പെട്ടാൽ (Soft Delete) ആ ഐറ്റം സ്കിപ്പ് ചെയ്യണം
             if (!item.product || item.product.isDeleted) return null;
 
             const productObj = item.product.toObject();
             
-            // 🔥 മാറ്റം: വേരിയന്റ് ഡിലീറ്റ് ചെയ്യപ്പെട്ടിട്ടുണ്ടോ എന്ന് നോക്കുന്നു
             const variant = productObj.variants.find(
                 (v: any) => v._id.toString() === item.variantId.toString() && !v.isDeleted
             );
@@ -103,7 +99,6 @@ export const updateCartQuantity = async (req: Request, res: Response) => {
         const cartItem = await Cart.findOne({ _id: req.params.id, user: req.user!._id });
         if (!cartItem) return res.status(404).json({ message: 'Cart item not found' });
 
-        // 🔥 മാറ്റം: പ്രൊഡക്റ്റ് ഇപ്പോഴും ലഭ്യമാണോ എന്ന് നോക്കുന്നു
         const product = await Product.findOne({ _id: cartItem.product, isDeleted: false });
         if (!product) return res.status(400).json({ message: 'Product is no longer available' });
 
