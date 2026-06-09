@@ -35,7 +35,8 @@ const allowedOrigins = [
   'http://localhost:5173',
   'https://urbanaana.com',
   'https://www.urbanaana.com',
-  'https://admin.urbanaana.com'
+  'https://admin.urbanaana.com',
+  'https://urban-aana-frontend.vercel.app'
 ];
 
 app.use(cors({
