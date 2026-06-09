@@ -125,7 +125,7 @@ export const getShippingRate = async (
 ): Promise<ShippingRateResponse | null> => {
 
     if (process.env.USE_MOCK_SHIPPING?.trim() === 'true') {
-        return { rate: 65, etd: '3-5 Days', courier_name: 'DTDC Mock Express' };
+        return { rate: 0, etd: '3-5 Days', courier_name: 'DTDC Mock Express' };
     }
 
     try {
@@ -138,29 +138,22 @@ export const getShippingRate = async (
             { headers: { 'Content-Type': 'text/plain' } }
         );
 
-        console.log('📦 DTDC Serviceability Response:', JSON.stringify(response.data, null, 2));
+        console.log('📦 DTDC Serviceability Check:', JSON.stringify(response.data, null, 2));
 
         const zipResponse = response.data?.ZIPCODE_RESP?.[0];
+
         if (zipResponse?.MESSAGE !== 'SUCCESS' || zipResponse?.SERVFLAG !== 'Y') {
-            return null;
+            console.warn(`⚠️ DTDC Service Not Available for ${delivery_pincode}`);
+            return null; 
         }
 
         const pinCityInfo = response.data?.PIN_CITY?.find((item: any) => item.PIN === delivery_pincode);
         const destState = pinCityInfo?.STATE_NAME?.toUpperCase() || '';
         const originState = (process.env.ORIGIN_STATE || 'KERALA').toUpperCase();
-
         const isLocal = destState === originState || destState === '';
-        const baseRate = isLocal
-            ? (Number(process.env.SHIPPING_BASE_RATE) || 60)
-            : (Number(process.env.SHIPPING_BASE_RATE_NATIONAL) || 100);
-        const perHalfKg = isLocal
-            ? (Number(process.env.SHIPPING_PER_500G) || 15)
-            : (Number(process.env.SHIPPING_PER_500G_NATIONAL) || 30);
-
-        const calculatedRate = baseRate + (Math.ceil(weight / 0.5) * perHalfKg);
 
         return {
-            rate: calculatedRate,
+            rate: 0, 
             etd: isLocal ? '2-3 Days' : '5-7 Days',
             courier_name: 'DTDC Express'
         };
