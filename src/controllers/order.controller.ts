@@ -180,22 +180,34 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
     try {
         const secret = process.env.RAZORPAY_WEBHOOK_SECRET!;
         const signature = req.headers['x-razorpay-signature'] as string;
-        const body = JSON.stringify(req.body);
 
-        const expectedSignature = crypto.createHmac('sha256', secret).update(body).digest('hex');
-        if (expectedSignature !== signature) return res.status(400).send('Invalid signature');
+        const rawBody = req.body.toString();
 
-        const event = req.body.event;
+        const expectedSignature = crypto
+            .createHmac('sha256', secret)
+            .update(rawBody)
+            .digest('hex');
+
+        if (expectedSignature !== signature) {
+            return res.status(400).send('Invalid webhook signature');
+        }
+
+        const payload = JSON.parse(rawBody);
+        const event = payload.event;
+
         if (event === 'payment.captured' || event === 'order.paid') {
-            const paymentDetails = req.body.payload.payment.entity;
+            const paymentDetails = payload.payload.payment.entity;
+
             const order = await Order.findOne({ razorpayOrderId: paymentDetails.order_id });
 
             if (order && !order.isPaid) {
                 await finalizeOrderPayment(order, paymentDetails.id, signature);
             }
         }
+
         res.status(200).send('ok');
     } catch (err: any) {
+        console.error("❌ Webhook Error:", err.message);
         res.status(500).send(err.message);
     }
 };
@@ -212,10 +224,9 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
         }
 
         if (status === 'Shipped' && !order.isPaid) {
-            return res.status(400).json({ message: 'Cannot ship an unpaid order.' });
+            return res.status(400).json({ message: 'Cannot ship an unpaid order. Please verify payment first.' });
         }
 
-        // --- A. SHIPPED STATUS LOGIC ---
         if (status === 'Shipped' && order.orderStatus !== 'Shipped') {
             const dtdcRes = await bookDTDCOrder(order);
 
@@ -236,12 +247,15 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
                 });
             }
         }
-        // --- B. CANCELLED STATUS LOGIC ---
         else if (status === 'Cancelled') {
             if (order.isPaid) {
                 for (const item of order.orderItems) {
                     await Product.updateOne(
-                        { _id: item.product, "variants._id": item.variantId, "variants.sizes._id": item.sizeId },
+                        {
+                            _id: item.product,
+                            "variants._id": item.variantId,
+                            "variants.sizes._id": item.sizeId
+                        },
                         { $inc: { "variants.$[v].sizes.$[s].stock": item.quantity } },
                         { arrayFilters: [{ "v._id": item.variantId }, { "s._id": item.sizeId }] }
                     );
@@ -249,17 +263,12 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
             }
             order.orderStatus = 'Cancelled';
         }
-        // --- C. OTHER STATUS LOGIC ---
         else {
-            if (status === 'Shipped' && !order.shippedAt) {
-                order.shippedAt = new Date();
-            }
             order.orderStatus = status || order.orderStatus;
             if (courierPartner) order.courierPartner = courierPartner;
             if (trackingId) order.trackingId = trackingId;
         }
 
-        // --- D. DELIVERED STATUS LOGIC ---
         if (status === 'Delivered' && !order.isDelivered) {
             order.isDelivered = true;
             order.deliveredAt = new Date();
@@ -280,27 +289,37 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
 
 export const getAllOrders = async (req: Request, res: Response) => {
     try {
-        const { search, startDate, endDate, status } = req.query;
+        const {
+            search,
+            startDate,
+            endDate,
+            status,
+            userId,               // ✅ new parameter
+            limit = 50,
+            page = 1,
+            sort = '-createdAt'
+        } = req.query;
 
         let query: any = {};
 
+        // ✅ Filter by specific user (if userId provided and valid)
+        if (userId && mongoose.isValidObjectId(userId)) {
+            query.user = userId;
+        }
+
         if (search) {
             const searchStr = search as string;
-
             const users = await User.find({
                 email: { $regex: searchStr, $options: 'i' }
             }).select('_id');
             const userIds = users.map(u => u._id);
-
             const orConditions: any[] = [
                 { razorpayOrderId: { $regex: searchStr, $options: 'i' } },
                 { user: { $in: userIds } }
             ];
-
             if (mongoose.isValidObjectId(searchStr)) {
                 orConditions.push({ _id: searchStr });
             }
-
             query.$or = orConditions;
         }
 
@@ -315,9 +334,15 @@ export const getAllOrders = async (req: Request, res: Response) => {
             query.orderStatus = status;
         }
 
+        const limitNum = parseInt(limit as string, 10);
+        const skip = (parseInt(page as string, 10) - 1) * limitNum;
+        const sortStr = sort as string;
+
         const orders = await Order.find(query)
             .populate('user', 'name email')
-            .sort({ createdAt: -1 });
+            .sort(sortStr)
+            .skip(skip)
+            .limit(limitNum);
 
         res.json(orders);
     } catch (error: any) {

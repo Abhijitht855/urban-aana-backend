@@ -40,6 +40,11 @@ export const createProduct = async (req: Request, res: Response) => {
       ...rest
     } = req.body;
 
+    // 1. ✅ Require at least one variant
+    if (!variants || !Array.isArray(variants) || variants.length === 0) {
+      return res.status(400).json({ message: 'At least one variant is required' });
+    }
+
     // 2. Category Validation
     const categoryExists = await Category.findById(category);
     if (!categoryExists) return res.status(400).json({ message: 'Invalid Category ID.' });
@@ -50,24 +55,30 @@ export const createProduct = async (req: Request, res: Response) => {
     }
 
     // 4. Variants & Sizes Validation
-    if (variants && Array.isArray(variants)) {
-      const colors = variants.map((v: any) => v.color.toLowerCase().trim());
-      if (colors.some((c, index) => colors.indexOf(c) !== index)) {
-        return res.status(400).json({ message: 'Duplicate colors found in variants' });
-      }
+    const colors = variants.map((v: any) => v.color.toLowerCase().trim());
+    if (colors.some((c, index) => colors.indexOf(c) !== index)) {
+      return res.status(400).json({ message: 'Duplicate colors found in variants' });
+    }
 
-      for (const v of variants) {
-        for (const s of v.sizes) {
-          if (s.price <= 0) return res.status(400).json({ message: `Price must be > 0 for size ${s.size}` });
-          if (s.stock < 0) return res.status(400).json({ message: `Stock cannot be negative for size ${s.size}` });
-        }
+    for (const v of variants) {
+      // ✅ Each variant must have at least one image
+      if (!v.images || !Array.isArray(v.images) || v.images.length === 0) {
+        return res.status(400).json({ message: `Each variant must have at least one image (missing for color ${v.color})` });
+      }
+      // ✅ Each variant must have at least one size
+      if (!v.sizes || !Array.isArray(v.sizes) || v.sizes.length === 0) {
+        return res.status(400).json({ message: `Each variant must have at least one size (missing for color ${v.color})` });
+      }
+      for (const s of v.sizes) {
+        if (s.price <= 0) return res.status(400).json({ message: `Price must be > 0 for size ${s.size}` });
+        if (s.stock < 0) return res.status(400).json({ message: `Stock cannot be negative for size ${s.size}` });
       }
     }
 
     const product = new Product({
       name,
       category,
-      variants: variants || [],
+      variants,               // now guaranteed non‑empty
       productStory,
       productDetails,
       weight: weight ? Number(weight) : 0.5,
@@ -368,7 +379,7 @@ export const globalSearch = async (req: Request, res: Response) => {
 export const getSitemap = async (req: Request, res: Response) => {
   try {
     const products = await Product.find({ isDeleted: false }).select('slug updatedAt');
-    
+
     const baseUrl = 'https://urbanaana.com';
 
     let xml = `<?xml version="1.0" encoding="UTF-8"?>`;

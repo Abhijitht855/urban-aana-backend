@@ -12,6 +12,8 @@ import orderRoutes from './routes/order.routes'
 import shippingRoutes from './routes/shipping.routes';
 import uploadRoutes from './routes/upload.routes';
 import bannerRoutes from './routes/banner.routes';
+import dashboardRoutes from './routes/dashboard.routes';
+import { razorpayWebhook } from './controllers/order.controller';
 
 const app: Application = express();
 
@@ -37,7 +39,6 @@ const allowedOrigins = [
   'https://urbanaana.com',
   'https://www.urbanaana.com',
   'https://admin.urbanaana.com',
-  'https://urban-aana-frontend.vercel.app'
 ];
 
 app.use(cors({
@@ -49,6 +50,8 @@ app.use(cors({
   },
   credentials: true,
 }));
+
+app.post('/api/orders/webhook', express.raw({ type: 'application/json' }), razorpayWebhook);
 
 app.use('/api', apiLimiter);
 app.use('/api/auth/login', authLimiter);
@@ -65,6 +68,7 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/shipping', shippingRoutes);
 app.use('/api/banners', bannerRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 app.get('/', (req: Request, res: Response) => {
   res.json({ message: '🚀 Urbanaana Secure API is running!' });

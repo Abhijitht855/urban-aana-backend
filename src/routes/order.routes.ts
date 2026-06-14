@@ -13,7 +13,6 @@ import { adminOnly, protect } from '../middlewares/auth.middleware';
 
 const router = Router();
 
-router.post('/webhook', razorpayWebhook);
 
 // User Routes
 router.post('/', protect, createOrder);

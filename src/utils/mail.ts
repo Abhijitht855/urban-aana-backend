@@ -120,13 +120,13 @@ export const sendOrderEmail = async (
             </div>
 
             <div style="text-align: center; margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px;">
-              <p style="font-size: 13px; color: #888;">If you have any questions, reply to this email or contact us at <a href="mailto:urbanaana2026@gmail.com" style="color: #dc2626; text-decoration: none;">support@urbanaana.com</a></p>
+              <p style="font-size: 13px; color: #888;">If you have any questions, reply to this email or contact us at <a href="mailto:urbanaana2026@gmail.com" style="color: #dc2626; text-decoration: none;">urbanaana2026@gmail.com</a></p>
             </div>
           </div>
 
           <!-- Footer -->
           <div style="padding: 20px; background-color: #000000; text-align: center;">
-            <p style="margin: 0; color: #ffffff; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">© 2024 Urban Aana India. Premium Apparel.</p>
+            <p style="margin: 0; color: #ffffff; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">© 2024 Urban Aana. Premium Apparel.</p>
           </div>
         </div>
       </body>
