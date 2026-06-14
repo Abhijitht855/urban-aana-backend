@@ -13,19 +13,43 @@ const checkExtraFields = (allowedFields: string[], body: any): string | null => 
 // ─── CREATE PRODUCT ──────────────────────────────────────────────────────────
 export const createProduct = async (req: Request, res: Response) => {
   try {
-    const allowed = ['name', 'shortDescription', 'mainDescription', 'category', 'mainImage', 'weight', 'isFeatured', 'variants'];
+    const allowed = [
+      'name',
+      'shortDescription',
+      'mainDescription',
+      'productStory',
+      'productDetails',
+      'category',
+      'mainImage',
+      'weight',
+      'isFeatured',
+      'variants'
+    ];
+
     const extraError = checkExtraFields(allowed, req.body);
     if (extraError) return res.status(400).json({ message: extraError });
 
-    const { name, category, variants, weight, isFeatured, ...rest } = req.body;
+    const {
+      name,
+      category,
+      variants,
+      weight,
+      isFeatured,
+      productStory,
+      productDetails,
+      ...rest
+    } = req.body;
 
+    // 2. Category Validation
     const categoryExists = await Category.findById(category);
     if (!categoryExists) return res.status(400).json({ message: 'Invalid Category ID.' });
 
+    // 3. Weight Validation
     if (weight !== undefined && Number(weight) <= 0) {
       return res.status(400).json({ message: 'Weight must be a positive number' });
     }
 
+    // 4. Variants & Sizes Validation
     if (variants && Array.isArray(variants)) {
       const colors = variants.map((v: any) => v.color.toLowerCase().trim());
       if (colors.some((c, index) => colors.indexOf(c) !== index)) {
@@ -41,7 +65,11 @@ export const createProduct = async (req: Request, res: Response) => {
     }
 
     const product = new Product({
-      name, category, variants: variants || [],
+      name,
+      category,
+      variants: variants || [],
+      productStory,
+      productDetails,
       weight: weight ? Number(weight) : 0.5,
       isFeatured: isFeatured === true || isFeatured === 'true',
       ...rest
@@ -93,14 +121,34 @@ export const getProductById = async (req: Request, res: Response) => {
   }
 };
 
-// ─── UPDATE PRODUCT ──────────────────────────────────────────────────────────
+// ─── UPDATE PRODUCT (BASIC INFO ONLY) ────────────────────────────────────────
 export const updateProduct = async (req: Request, res: Response) => {
   try {
-    const allowed = ['name', 'shortDescription', 'mainDescription', 'category', 'isFeatured', 'weight', 'mainImage'];
+    const allowed = [
+      'name',
+      'shortDescription',
+      'mainDescription',
+      'productStory',
+      'productDetails',
+      'category',
+      'isFeatured',
+      'weight',
+      'mainImage'
+    ];
+
     const extraError = checkExtraFields(allowed, req.body);
     if (extraError) return res.status(400).json({ message: extraError });
 
-    const { category, weight, isFeatured, ...updateData } = req.body;
+    // 2. Destructuring fields
+    const {
+      category,
+      weight,
+      isFeatured,
+      productStory,
+      productDetails,
+      ...updateData
+    } = req.body;
+
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
@@ -115,11 +163,17 @@ export const updateProduct = async (req: Request, res: Response) => {
       product.weight = Number(weight);
     }
 
+    // 5. Featured Status
     if (isFeatured !== undefined) {
       product.isFeatured = isFeatured === true || isFeatured === 'true';
     }
 
+    // 6. പുതിയ ഫീൽഡുകൾ അപ്‌ഡേറ്റ് ചെയ്യുന്നു
+    if (productStory !== undefined) product.productStory = productStory;
+    if (productDetails !== undefined) product.productDetails = productDetails;
+
     Object.assign(product, updateData);
+
     await product.save();
     res.json(product);
   } catch (error: any) {
@@ -187,7 +241,9 @@ export const updateVariant = async (req: Request, res: Response) => {
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
     const variant = product.variants.id(req.params.variantId as any);
-    if (!variant || variant.isDeleted) return res.status(404).json({ message: 'Active variant not found' });
+    if (!variant || variant.isDeleted) {
+      return res.status(404).json({ message: 'Active variant not found' });
+    }
 
     if (color && color.toLowerCase().trim() !== variant.color.toLowerCase().trim()) {
       const colorExists = product.variants.some(
@@ -197,7 +253,12 @@ export const updateVariant = async (req: Request, res: Response) => {
       variant.color = color;
     }
 
-    if (images) variant.images = images;
+    if (images) {
+      if (!Array.isArray(images) || images.length === 0) {
+        return res.status(400).json({ message: 'At least one image is required for a variant' });
+      }
+      variant.images = images;
+    }
 
     await product.save();
     res.json(product);
@@ -217,7 +278,7 @@ export const deleteVariant = async (req: Request, res: Response) => {
 
     variant.isDeleted = true;
     variant.color = `${variant.color}-archived-${Date.now()}`;
-    
+
     await product.save();
     res.json({ message: 'Variant archived successfully' });
   } catch (error: any) {
@@ -301,5 +362,35 @@ export const globalSearch = async (req: Request, res: Response) => {
     res.json({ success: true, results: { products, categories } });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+export const getSitemap = async (req: Request, res: Response) => {
+  try {
+    const products = await Product.find({ isDeleted: false }).select('slug updatedAt');
+    
+    const baseUrl = 'https://urbanaana.com';
+
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>`;
+    xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`;
+
+    xml += `<url><loc>${baseUrl}/</loc><priority>1.0</priority></url>`;
+
+    products.forEach((prod) => {
+      xml += `
+        <url>
+          <loc>${baseUrl}/product/${prod.slug}</loc>
+          <lastmod>${prod.updatedAt.toISOString().split('T')[0]}</lastmod>
+          <changefreq>daily</changefreq>
+          <priority>0.8</priority>
+        </url>`;
+    });
+
+    xml += `</urlset>`;
+
+    res.header('Content-Type', 'application/xml');
+    res.send(xml);
+  } catch (error) {
+    res.status(500).send('Error generating sitemap');
   }
 };

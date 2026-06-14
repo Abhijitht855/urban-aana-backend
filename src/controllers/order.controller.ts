@@ -4,7 +4,10 @@ import Order from '../models/Order';
 import Product from '../models/Product';
 import Cart from '../models/Cart';
 import Razorpay from 'razorpay';
-import { getShippingRate, bookDTDCOrder } from './shipping.controller';
+import { getShippingRate, bookDTDCOrder, getDTDCStatus } from './shipping.controller';
+import User from '../models/User';
+import mongoose from 'mongoose';
+import { sendOrderEmail } from '../utils/mail';
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID || '',
@@ -33,6 +36,15 @@ const finalizeOrderPayment = async (order: any, paymentId: string, signature: st
             { $inc: { "variants.$[v].sizes.$[s].stock": -item.quantity } },
             { arrayFilters: [{ "v._id": item.variantId }, { "s._id": item.sizeId }] }
         );
+    }
+
+    try {
+        const user = await User.findById(order.user);
+        if (user && user.email) {
+            await sendOrderEmail(user.email, order, 'CONFIRMED');
+        }
+    } catch (mailError) {
+        console.error("❌ Confirmation Email failed:", mailError);
     }
 
     if (order.fromCart) {
@@ -192,32 +204,73 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     try {
         const { status, courierPartner, trackingId } = req.body;
         const order = await Order.findById(req.params.id);
+
         if (!order) return res.status(404).json({ message: 'Order not found' });
 
-        if (status === 'Shipped' && order.orderStatus !== 'Shipped' && order.isPaid) {
+        if (order.orderStatus === 'Cancelled') {
+            return res.status(400).json({ message: 'Cancelled orders cannot be modified' });
+        }
+
+        if (status === 'Shipped' && !order.isPaid) {
+            return res.status(400).json({ message: 'Cannot ship an unpaid order.' });
+        }
+
+        // --- A. SHIPPED STATUS LOGIC ---
+        if (status === 'Shipped' && order.orderStatus !== 'Shipped') {
             const dtdcRes = await bookDTDCOrder(order);
+
             if (dtdcRes && dtdcRes.success) {
                 order.trackingId = dtdcRes.reference_number;
                 order.courierPartner = dtdcRes.courier_partner || 'DTDC Express';
                 order.orderStatus = 'Shipped';
-                order.shippedAt = new Date(); 
+                order.shippedAt = new Date();
+
+                const user = await User.findById(order.user);
+                if (user && user.email) {
+                    await sendOrderEmail(user.email, order, 'SHIPPED');
+                }
             } else {
-                return res.status(400).json({ 
-                    message: 'DTDC Booking Failed', 
-                    error: (dtdcRes as any)?.message 
+                return res.status(400).json({
+                    message: 'DTDC Booking Failed',
+                    error: (dtdcRes as any)?.message || 'Check DTDC connectivity'
                 });
             }
-        } else {
-            if (status === 'Shipped') order.shippedAt = new Date(); 
+        }
+        // --- B. CANCELLED STATUS LOGIC ---
+        else if (status === 'Cancelled') {
+            if (order.isPaid) {
+                for (const item of order.orderItems) {
+                    await Product.updateOne(
+                        { _id: item.product, "variants._id": item.variantId, "variants.sizes._id": item.sizeId },
+                        { $inc: { "variants.$[v].sizes.$[s].stock": item.quantity } },
+                        { arrayFilters: [{ "v._id": item.variantId }, { "s._id": item.sizeId }] }
+                    );
+                }
+            }
+            order.orderStatus = 'Cancelled';
+        }
+        // --- C. OTHER STATUS LOGIC ---
+        else {
+            if (status === 'Shipped' && !order.shippedAt) {
+                order.shippedAt = new Date();
+            }
             order.orderStatus = status || order.orderStatus;
             if (courierPartner) order.courierPartner = courierPartner;
             if (trackingId) order.trackingId = trackingId;
         }
 
-        if (status === 'Delivered') {
+        // --- D. DELIVERED STATUS LOGIC ---
+        if (status === 'Delivered' && !order.isDelivered) {
             order.isDelivered = true;
             order.deliveredAt = new Date();
+            order.orderStatus = 'Delivered';
+
+            const user = await User.findById(order.user);
+            if (user && user.email) {
+                await sendOrderEmail(user.email, order, 'DELIVERED');
+            }
         }
+
         await order.save();
         res.json(order);
     } catch (error: any) {
@@ -227,22 +280,142 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
 
 export const getAllOrders = async (req: Request, res: Response) => {
     try {
-        const orders = await Order.find({}).populate('user', 'name email').sort({ createdAt: -1 });
+        const { search, startDate, endDate, status } = req.query;
+
+        let query: any = {};
+
+        if (search) {
+            const searchStr = search as string;
+
+            const users = await User.find({
+                email: { $regex: searchStr, $options: 'i' }
+            }).select('_id');
+            const userIds = users.map(u => u._id);
+
+            const orConditions: any[] = [
+                { razorpayOrderId: { $regex: searchStr, $options: 'i' } },
+                { user: { $in: userIds } }
+            ];
+
+            if (mongoose.isValidObjectId(searchStr)) {
+                orConditions.push({ _id: searchStr });
+            }
+
+            query.$or = orConditions;
+        }
+
+        if (startDate && endDate) {
+            query.createdAt = {
+                $gte: new Date(startDate as string),
+                $lte: new Date(new Date(endDate as string).setHours(23, 59, 59, 999))
+            };
+        }
+
+        if (status) {
+            query.orderStatus = status;
+        }
+
+        const orders = await Order.find(query)
+            .populate('user', 'name email')
+            .sort({ createdAt: -1 });
+
         res.json(orders);
-    } catch (error: any) { res.status(500).json({ message: error.message }); }
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
 };
 
 export const getMyOrders = async (req: Request, res: Response) => {
     try {
-        const orders = await Order.find({ user: req.user!._id }).sort({ createdAt: -1 });
+        const orders = await Order.find({
+            user: req.user!._id,
+            isPaid: true
+        }).sort({ createdAt: -1 });
+
         res.json(orders);
-    } catch (error: any) { res.status(500).json({ message: error.message }); }
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
 };
 
 export const getOrderById = async (req: Request, res: Response) => {
     try {
         const order = await Order.findById(req.params.id).populate('user', 'name email');
-        if (!order) return res.status(404).json({ message: 'Order not found' });
+
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+
+        const isOwner = order.user._id.toString() === req.user!._id.toString();
+        const isAdmin = req.user?.role === 'admin';
+
+        if (!isAdmin && !isOwner) {
+            return res.status(401).json({ message: 'Not authorized to view this order' });
+        }
+
+        if (!isAdmin && !order.isPaid) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+
         res.json(order);
-    } catch (error: any) { res.status(500).json({ message: error.message }); }
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+
+export const syncOrderStatus = async (req: Request, res: Response) => {
+    try {
+        const order = await Order.findById(req.params.id);
+
+        if (!order) {
+            return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+
+        if (!order.trackingId) {
+            return res.status(400).json({ success: false, message: 'Order does not have a tracking ID' });
+        }
+
+        const rawStatus = await getDTDCStatus(order.trackingId);
+
+        if (!rawStatus) {
+            return res.status(400).json({ success: false, message: 'Could not fetch status from DTDC' });
+        }
+
+        const status = rawStatus.toLowerCase().trim().replace(/\.$/, '')
+
+        const DELIVERED_STATUSES = ['delivered', 'dlvd', 'delivery done', 'shipment delivered', 'successfully delivered', 'recipient received'];
+        const CANCELLED_STATUSES = ['cancelled', 'pickup cancelled', 'return as per client instruction', 'pcan', 'stopdlv'];
+
+        let updated = false;
+
+        if (DELIVERED_STATUSES.includes(status) && order.orderStatus !== 'Delivered') {
+            order.orderStatus = 'Delivered';
+            order.isDelivered = true;
+            order.deliveredAt = new Date();
+            updated = true;
+        }
+        else if (CANCELLED_STATUSES.includes(status) && order.orderStatus !== 'Cancelled') {
+            order.orderStatus = 'Cancelled';
+            updated = true;
+        }
+
+        if (updated) {
+            await order.save();
+            return res.json({
+                success: true,
+                message: `Order status synced to: ${order.orderStatus}`,
+                currentDTDCStatus: rawStatus
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Order status is already up to date',
+            currentDTDCStatus: rawStatus
+        });
+
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
 };

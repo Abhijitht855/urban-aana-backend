@@ -6,7 +6,8 @@ import {
     updateOrderStatus,
     verifyPayment,
     getAllOrders,
-    razorpayWebhook 
+    razorpayWebhook, 
+    syncOrderStatus
 } from '../controllers/order.controller';
 import { adminOnly, protect } from '../middlewares/auth.middleware';
 
@@ -23,5 +24,6 @@ router.get('/:id', protect, getOrderById);
 // Admin Routes
 router.get('/', protect, adminOnly, getAllOrders);
 router.put('/:id/status', protect, adminOnly, updateOrderStatus);
+router.patch('/:id/sync-status', protect, adminOnly, syncOrderStatus);
 
 export default router;

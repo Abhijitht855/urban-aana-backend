@@ -2,7 +2,7 @@ import mongoose, { Document, Schema, Types } from 'mongoose';
 
 // Size Entry Interface
 interface ISizeEntry extends Types.Subdocument {
-  size: 'S' | 'M' | 'L' | 'XL' | 'XXL';
+  size: 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'XXXL';
   stock: number;
   price: number;
 }
@@ -20,6 +20,8 @@ export interface IProduct extends Document {
   slug: string;
   shortDescription: string;
   mainDescription: string;
+  productStory?: string;
+  productDetails?: string[];
   category: mongoose.Types.ObjectId;
   mainImage: string;
   variants: Types.DocumentArray<IVariant>; // Changed to DocumentArray
@@ -32,7 +34,7 @@ export interface IProduct extends Document {
 
 const sizeEntrySchema = new Schema<ISizeEntry>(
   {
-    size: { type: String, enum: ['S', 'M', 'L', 'XL', 'XXL'], required: true },
+    size: { type: String, enum: ['S', 'M', 'L', 'XL', 'XXL', 'XXXL'], required: true },
     stock: { type: Number, default: 0, min: 0 },
     price: { type: Number, required: true, min: 0 },
   },
@@ -55,6 +57,8 @@ const productSchema = new Schema<IProduct>(
     slug: { type: String, required: true, unique: true, lowercase: true },
     shortDescription: { type: String, required: true, maxlength: 200 },
     mainDescription: { type: String, required: true },
+    productStory: { type: String, trim: true },
+    productDetails: { type: [String], default: [] },
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
     mainImage: { type: String, required: true },
     weight: { type: Number, default: 0.5 },

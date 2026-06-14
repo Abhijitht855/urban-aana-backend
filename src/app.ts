@@ -11,6 +11,7 @@ import cartRoutes from './routes/cart.routes'
 import orderRoutes from './routes/order.routes'
 import shippingRoutes from './routes/shipping.routes';
 import uploadRoutes from './routes/upload.routes';
+import bannerRoutes from './routes/banner.routes';
 
 const app: Application = express();
 
@@ -63,6 +64,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/shipping', shippingRoutes);
+app.use('/api/banners', bannerRoutes);
 
 app.get('/', (req: Request, res: Response) => {
   res.json({ message: '🚀 Urbanaana Secure API is running!' });

@@ -10,7 +10,8 @@ import {
   deleteVariant,
   updateSize,
   addSize,
-  globalSearch
+  globalSearch,
+  getSitemap
 } from '../controllers/product.controller';
 import { adminOnly, protect } from '../middlewares/auth.middleware';
 
@@ -34,5 +35,7 @@ router.delete('/:id/variants/:variantId', protect, adminOnly, deleteVariant);
 // Admin Routes - Size Management
 router.post('/:id/variants/:variantId/sizes', protect, adminOnly, addSize);
 router.put('/:id/variants/:variantId/sizes/:sizeId', protect, adminOnly, updateSize);
+
+router.get('/seo/sitemap.xml', getSitemap);
 
 export default router;

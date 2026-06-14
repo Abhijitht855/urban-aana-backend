@@ -1,7 +1,8 @@
 import cron from 'node-cron';
 import Order from '../models/Order';
+import User from '../models/User'; 
 import { getDTDCStatus } from '../controllers/shipping.controller';
-
+import { sendOrderEmail } from './mail';
 
 const DELIVERED_STATUSES = [
     'delivered', 
@@ -12,10 +13,18 @@ const DELIVERED_STATUSES = [
     'recipient received'
 ];
 
+const CANCELLED_STATUSES = [
+    'cancelled', 
+    'pickup cancelled', 
+    'return as per client instruction', 
+    'pcan', 
+    'stopdlv'
+];
+
 export const startOrderScheduler = () => {
     cron.schedule('0 */6 * * *', async () => {
         const timestamp = new Date().toLocaleString('en-IN');
-        console.log(`🚚 [${timestamp}] Scheduler: Starting delivery status check...`);
+        console.log(`🚚 [${timestamp}] Scheduler: Starting delivery & cancellation check...`);
 
         try {
             const checkThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -25,40 +34,35 @@ export const startOrderScheduler = () => {
                 isPaid: true,
                 trackingId: { $exists: true, $ne: '' },
                 shippedAt: { $lte: checkThreshold } 
-            }).select('trackingId orderStatus _id');
+            });
 
-            if (shippedOrders.length === 0) {
-                console.log("ℹ️ [Scheduler]: No eligible orders for checking.");
-                return;
-            }
-
-            console.log(`📦 [Scheduler]: Checking ${shippedOrders.length} shipped orders.`);
+            if (shippedOrders.length === 0) return;
 
             for (const order of shippedOrders) {
                 if (!order.trackingId) continue;
 
-                
                 const rawStatus = await getDTDCStatus(order.trackingId);
+                if (!rawStatus) continue;
+
+                const status = rawStatus.toLowerCase().trim();
+
+                if (DELIVERED_STATUSES.includes(status)) {
+                    order.orderStatus = 'Delivered';
+                    order.isDelivered = true;
+                    order.deliveredAt = new Date();
+                    await order.save();
+
+                    const user = await User.findById(order.user);
+                    if (user && user.email) {
+                        await sendOrderEmail(user.email, order, 'DELIVERED');
+                    }
+                    console.log(`✅ Order ${order._id} updated and Delivery Email sent.`);
+                } 
                 
-                if (!rawStatus) {
-                    console.log(`⚠️ [Scheduler]: Could not fetch status for Order ${order._id}`);
-                    continue;
-                }
-
-                console.log(`🔍 Order ${order._id} -> Current DTDC Status: "${rawStatus}"`);
-
-                if (DELIVERED_STATUSES.includes(rawStatus.toLowerCase().trim())) {
-                    await Order.updateOne(
-                        { _id: order._id },
-                        {
-                            $set: {
-                                orderStatus: 'Delivered',
-                                isDelivered: true,
-                                deliveredAt: new Date()
-                            }
-                        }
-                    );
-                    console.log(`✅ [Scheduler]: Order ${order._id} marked as DELIVERED in database.`);
+                else if (CANCELLED_STATUSES.includes(status)) {
+                    order.orderStatus = 'Cancelled';
+                    await order.save();
+                    console.log(`🚫 Order ${order._id} marked as Cancelled.`);
                 }
             }
         } catch (error: any) {
